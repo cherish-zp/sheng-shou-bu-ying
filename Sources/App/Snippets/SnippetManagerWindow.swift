@@ -1,8 +1,7 @@
 import AppKit
 
-/// 片段管理窗口：master-detail 布局（左侧列表 + 右侧编辑）。
-/// 毛玻璃背景、圆角卡片、SF Symbols 图标按钮、实时搜索、一键复制。
-final class SnippetManagerWindow: NSWindow, NSSearchFieldDelegate, NSWindowDelegate {
+/// 片段管理视图：master-detail 布局，可独立成窗口，也可嵌入设置页。
+final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSource, NSTableViewDelegate {
 
     private let manager = SnippetManager.shared
     private var tableView: NSTableView!
@@ -15,27 +14,18 @@ final class SnippetManagerWindow: NSWindow, NSSearchFieldDelegate, NSWindowDeleg
     private var copyButton: NSButton!
     private var deleteButton: NSButton!
 
+    var onSnippetActivated: (() -> Void)?
+    let undoableFieldEditor = UndoFieldEditorPolicy.makeFieldEditor()
+
     private static let cellID = NSUserInterfaceItemIdentifier("snippetCell")
 
-    /// 供 key/搜索等 NSTextField 使用的可撤销 field editor（系统默认不允许 Undo）。
-    private lazy var undoableFieldEditor = UndoFieldEditorPolicy.makeFieldEditor()
-
     init() {
-        super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 780, height: 500),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-        title = "管理片段"
-        titlebarAppearsTransparent = true
-        center()
-        isReleasedWhenClosed = false
-        minSize = NSSize(width: 660, height: 420)
-        delegate = self
+        super.init(frame: .zero)
         buildUI()
         reloadTable()
     }
+
+    required init?(coder: NSCoder) { fatalError("unsupported") }
 
     // MARK: - UI 构建
 
@@ -44,10 +34,9 @@ final class SnippetManagerWindow: NSWindow, NSSearchFieldDelegate, NSWindowDeleg
         bg.material = .windowBackground
         bg.blendingMode = .behindWindow
         bg.state = .active
-        bg.autoresizingMask = [.width, .height]
-        contentView = bg
+        bg.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(bg)
 
-        // 搜索框
         searchField = NSSearchField()
         searchField.translatesAutoresizingMaskIntoConstraints = false
         searchField.placeholderString = "搜索片段…"
@@ -56,7 +45,6 @@ final class SnippetManagerWindow: NSWindow, NSSearchFieldDelegate, NSWindowDeleg
         searchField.delegate = self
         bg.addSubview(searchField)
 
-        // 左侧列表卡片
         let listCard = makeCard()
         let listContent = listCard.contentView!
         bg.addSubview(listCard)
@@ -93,7 +81,6 @@ final class SnippetManagerWindow: NSWindow, NSSearchFieldDelegate, NSWindowDeleg
         emptyStateLabel.maximumNumberOfLines = 2
         listContent.addSubview(emptyStateLabel)
 
-        // 右侧编辑卡片
         let detailCard = makeCard()
         let detailContent = detailCard.contentView!
         bg.addSubview(detailCard)
@@ -128,7 +115,6 @@ final class SnippetManagerWindow: NSWindow, NSSearchFieldDelegate, NSWindowDeleg
         contentScroll.documentView = contentField
         detailContent.addSubview(contentScroll)
 
-        // 操作按钮
         let addButton = makeButton(symbol: "plus", label: "新增", action: #selector(addClicked))
         deleteButton = makeButton(symbol: "minus", label: "删除", action: #selector(deleteClicked))
         copyButton = makeButton(symbol: "doc.on.doc", label: "复制", action: #selector(copyClicked))
@@ -144,17 +130,18 @@ final class SnippetManagerWindow: NSWindow, NSSearchFieldDelegate, NSWindowDeleg
         saveButton.translatesAutoresizingMaskIntoConstraints = false
         detailContent.addSubview(saveButton)
 
-        // 布局约束
         let pad: CGFloat = 16
-        let topInset: CGFloat = 38
         NSLayoutConstraint.activate([
-            // 搜索框
-            searchField.topAnchor.constraint(equalTo: bg.topAnchor, constant: topInset),
+            bg.leadingAnchor.constraint(equalTo: leadingAnchor),
+            bg.trailingAnchor.constraint(equalTo: trailingAnchor),
+            bg.topAnchor.constraint(equalTo: topAnchor),
+            bg.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+            searchField.topAnchor.constraint(equalTo: bg.topAnchor, constant: 16),
             searchField.leadingAnchor.constraint(equalTo: bg.leadingAnchor, constant: pad),
             searchField.trailingAnchor.constraint(equalTo: bg.trailingAnchor, constant: -pad),
             searchField.heightAnchor.constraint(equalToConstant: 28),
 
-            // 左侧列表卡片
             listCard.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 12),
             listCard.leadingAnchor.constraint(equalTo: bg.leadingAnchor, constant: pad),
             listCard.widthAnchor.constraint(equalToConstant: 270),
@@ -170,7 +157,6 @@ final class SnippetManagerWindow: NSWindow, NSSearchFieldDelegate, NSWindowDeleg
             emptyStateLabel.leadingAnchor.constraint(greaterThanOrEqualTo: listContent.leadingAnchor, constant: 12),
             emptyStateLabel.trailingAnchor.constraint(lessThanOrEqualTo: listContent.trailingAnchor, constant: -12),
 
-            // 右侧编辑卡片
             detailCard.topAnchor.constraint(equalTo: listCard.topAnchor),
             detailCard.leadingAnchor.constraint(equalTo: listCard.trailingAnchor, constant: 12),
             detailCard.trailingAnchor.constraint(equalTo: bg.trailingAnchor, constant: -pad),
@@ -209,7 +195,6 @@ final class SnippetManagerWindow: NSWindow, NSSearchFieldDelegate, NSWindowDeleg
     private func makeCard() -> NSBox {
         let box = NSBox()
         box.boxType = .custom
-        box.borderType = .noBorder
         box.cornerRadius = 12
         box.fillColor = NSColor.controlBackgroundColor.withAlphaComponent(0.35)
         box.contentViewMargins = NSSize(width: 0, height: 0)
@@ -226,21 +211,21 @@ final class SnippetManagerWindow: NSWindow, NSSearchFieldDelegate, NSWindowDeleg
     }
 
     private func makeButton(symbol: String, label: String, action: Selector, accent: Bool = false) -> NSButton {
-        let btn = NSButton()
-        btn.translatesAutoresizingMaskIntoConstraints = false
-        btn.title = label
-        btn.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
-        btn.imagePosition = .imageLeading
-        btn.target = self
-        btn.action = action
-        btn.bezelStyle = accent ? .rounded : .recessed
-        btn.contentTintColor = accent ? .controlAccentColor : .secondaryLabelColor
-        return btn
+        let button = NSButton()
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.title = label
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+        button.imagePosition = .imageLeading
+        button.target = self
+        button.action = action
+        button.bezelStyle = accent ? .rounded : .recessed
+        button.contentTintColor = accent ? .controlAccentColor : .secondaryLabelColor
+        return button
     }
 
     // MARK: - 数据
 
-    private func reloadTable() {
+    func reloadTable() {
         let query = searchField.stringValue
         filteredSnippets = query.isEmpty ? manager.snippets : manager.search(query: query)
         tableView.reloadData()
@@ -265,17 +250,10 @@ final class SnippetManagerWindow: NSWindow, NSSearchFieldDelegate, NSWindowDeleg
         deleteButton.isEnabled = hasSelection
     }
 
-    // MARK: - 撤销支持
-
-    /// 为 key/搜索等 NSTextField 提供启用 Undo 的 field editor，使 Cmd+Z 生效。
-    func windowWillReturnFieldEditor(_ sender: NSWindow, to client: Any?) -> Any? {
-        undoableFieldEditor
-    }
-
     // MARK: - 搜索
 
-    func controlTextDidChange(_ obj: Notification) {
-        guard obj.object as? NSSearchField === searchField else { return }
+    func controlTextDidChange(_ object: Notification) {
+        guard object.object as? NSSearchField === searchField else { return }
         reloadTable()
     }
 
@@ -324,9 +302,8 @@ final class SnippetManagerWindow: NSWindow, NSSearchFieldDelegate, NSWindowDeleg
 
     @objc private func copyClicked() {
         guard let snippet = selectedSnippet else { return }
-        if manager.copyToPasteboard(forKey: snippet.key) {
-            flashCopyButton()
-        }
+        _ = manager.copyToPasteboard(forKey: snippet.key)
+        flashCopyButton()
     }
 
     private func flashCopyButton() {
@@ -344,24 +321,12 @@ final class SnippetManagerWindow: NSWindow, NSSearchFieldDelegate, NSWindowDeleg
 
     @objc private func tableDoubleClicked() {
         let row = tableView.selectedRow
-        guard row >= 0, row < filteredSnippets.count else { return }
-        let snippet = filteredSnippets[row]
-        if manager.copyToPasteboard(forKey: snippet.key) {
-            close()
-        }
+        guard row >= 0, row < filteredSnippets.count,
+              manager.copyToPasteboard(forKey: filteredSnippets[row].key) else { return }
+        onSnippetActivated?()
     }
 
-    func showAndFocus() {
-        reloadTable()
-        updateButtonStates()
-        makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-}
-
-// MARK: - NSTableView
-
-extension SnippetManagerWindow: NSTableViewDataSource, NSTableViewDelegate {
+    // MARK: - NSTableView
 
     func numberOfRows(in tableView: NSTableView) -> Int {
         filteredSnippets.count
@@ -388,6 +353,37 @@ extension SnippetManagerWindow: NSTableViewDataSource, NSTableViewDelegate {
         keyField.stringValue = snippet.key
         contentField.string = snippet.content
         updateButtonStates()
+    }
+}
+
+/// 片段管理独立窗口，保留给后续快捷入口复用。
+final class SnippetManagerWindow: NSWindow, NSWindowDelegate {
+    private let managerView = SnippetManagerView()
+
+    init() {
+        super.init(
+            contentRect: NSRect(x: 0, y: 0, width: 780, height: 500),
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        title = "管理片段"
+        titlebarAppearsTransparent = true
+        center()
+        isReleasedWhenClosed = false
+        minSize = NSSize(width: 660, height: 420)
+        delegate = self
+        contentView = managerView
+    }
+
+    func showAndFocus() {
+        managerView.reloadTable()
+        makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func windowWillReturnFieldEditor(_ sender: NSWindow, to client: Any?) -> Any? {
+        managerView.undoableFieldEditor
     }
 }
 

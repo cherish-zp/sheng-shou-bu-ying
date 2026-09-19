@@ -18,7 +18,7 @@ final class AppModuleRegistryTests: XCTestCase {
 
     func test_enabledModule_hotkeyTriggersPerform() {
         let registrar = FakeHotkeyRegistrar()
-        let registry = AppModuleRegistry(hotkeyManager: HotkeyManager(registrar: registrar))
+        let registry = makeRegistry(hotkeyManager: HotkeyManager(registrar: registrar))
         let module = FakeModule(id: "screenshot", hotkey: .f1)
         registry.register(module)
 
@@ -30,7 +30,7 @@ final class AppModuleRegistryTests: XCTestCase {
 
     func test_disableModule_unregistersHotkey() {
         let registrar = FakeHotkeyRegistrar()
-        let registry = AppModuleRegistry(hotkeyManager: HotkeyManager(registrar: registrar))
+        let registry = makeRegistry(hotkeyManager: HotkeyManager(registrar: registrar))
         let module = FakeModule(id: "screenshot", hotkey: .f1)
         registry.register(module)
         registry.setEnabled("screenshot", false)
@@ -41,7 +41,7 @@ final class AppModuleRegistryTests: XCTestCase {
 
     func test_reEnable_rebindsHotkey() {
         let registrar = FakeHotkeyRegistrar()
-        let registry = AppModuleRegistry(hotkeyManager: HotkeyManager(registrar: registrar))
+        let registry = makeRegistry(hotkeyManager: HotkeyManager(registrar: registrar))
         let module = FakeModule(id: "screenshot", hotkey: .f1)
         registry.register(module)
         registry.setEnabled("screenshot", false)
@@ -53,8 +53,13 @@ final class AppModuleRegistryTests: XCTestCase {
         XCTAssertEqual(module.performCount, 1)
     }
 
-    private func makeRegistry() -> AppModuleRegistry {
-        AppModuleRegistry(hotkeyManager: HotkeyManager(registrar: FakeHotkeyRegistrar()))
+    private func makeRegistry(hotkeyManager: HotkeyManager? = nil) -> AppModuleRegistry {
+        let defaults = UserDefaults(suiteName: "AppModuleRegistryTests")!
+        defaults.removePersistentDomain(forName: "AppModuleRegistryTests")
+        return AppModuleRegistry(
+            hotkeyManager: hotkeyManager ?? HotkeyManager(registrar: FakeHotkeyRegistrar()),
+            configDefaults: defaults
+        )
     }
 }
 

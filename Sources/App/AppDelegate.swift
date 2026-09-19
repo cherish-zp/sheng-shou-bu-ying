@@ -13,7 +13,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var globalKeyMonitor: Any?
     private var eventTapListener: CGEventTapHotkeyListener?
     private var permissionTimer: Timer?
-    private var snippetManagerWindow: SnippetManagerWindow?
     private var settingsWindow: SettingsWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -109,7 +108,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // NSEvent 全局监控备选方案
         globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if ScreenshotHotkeyAction.action(for: UInt32(event.keyCode)) == .screenshot {
+            if ScreenshotHotkeyAction.action(for: UInt32(event.keyCode)) == .screenshot,
+               self?.moduleRegistry.isEnabled("screenshot") == true {
                 DiagLog.write("NSEvent global monitor: F1 detected")
                 self?.triggerScreenshot()
             }
@@ -130,7 +130,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self = self else { return false }
             switch ScreenshotHotkeyAction.action(for: UInt32(keyCode)) {
             case .screenshot:
-                // F1：始终消费，触发截图
+                // F1：仅模块启用时消费并触发截图
+                guard self.moduleRegistry.isEnabled("screenshot") else { return false }
                 self.triggerScreenshot()
                 return true
             case .pin:
@@ -164,21 +165,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func rebuildMenu() {
         let menu = NSMenu()
+        menu.autoenablesItems = false
 
         let header = menu.addItem(withTitle: "mac_tool_pro", action: nil, keyEquivalent: "")
         header.isEnabled = false
-
-        // Finder 工具
-        let toolsHeader = menu.addItem(withTitle: "Finder 工具", action: nil, keyEquivalent: "")
-        toolsHeader.isEnabled = false
-        for tool in ToolRegistry.shared.tools {
-            let item = NSMenuItem(title: tool.title, action: #selector(toggleTool(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = tool.id
-            item.image = tool.image
-            item.state = ToolConfig.isEnabled(tool.id) ? .on : .off
-            menu.addItem(item)
-        }
 
         // App 模块
         menu.addItem(.separator())
@@ -186,10 +176,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         modulesHeader.isEnabled = false
         for module in moduleRegistry.modules {
             let hotkeySuffix = module.defaultHotkey.functionKeyLabel.map { " (\($0))" } ?? ""
-            let item = NSMenuItem(title: module.title + hotkeySuffix, action: #selector(toggleModule(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: module.title + hotkeySuffix, action: #selector(performModule(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = module.id
-            item.state = moduleRegistry.isEnabled(module.id) ? .on : .off
+            item.isEnabled = moduleRegistry.isEnabled(module.id)
+            item.state = .off
             menu.addItem(item)
         }
 
@@ -209,12 +200,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 menu.addItem(item)
             }
         }
-        menu.addItem(withTitle: "管理片段...", action: #selector(showSnippetManager), keyEquivalent: "")
-
-        // 手动触发截图 + 诊断
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "截图 (F1)", action: #selector(triggerScreenshot), keyEquivalent: "")
-        menu.addItem(withTitle: "查看热键日志", action: #selector(showHotkeyLog), keyEquivalent: "")
+        menu.addItem(withTitle: "管理片段...", action: #selector(showSnippetSettings), keyEquivalent: "")
 
         menu.addItem(.separator())
         menu.addItem(withTitle: "设置…", action: #selector(showSettings), keyEquivalent: ",")
@@ -232,17 +218,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pollTimer = timer
     }
 
-    @objc private func toggleTool(_ sender: NSMenuItem) {
+    @objc private func performModule(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
-        ToolConfig.setEnabled(id, !ToolConfig.isEnabled(id))
-        rebuildMenu()
+        guard moduleRegistry.isEnabled(id) else { return }
+        moduleRegistry.module(for: id)?.perform()
     }
 
-    @objc private func toggleModule(_ sender: NSMenuItem) {
-        guard let id = sender.representedObject as? String else { return }
-        moduleRegistry.setEnabled(id, !moduleRegistry.isEnabled(id))
+    private func handleModuleStateChanged(id: String, isEnabled: Bool) {
         if id == transferShelfModule.id {
-            if moduleRegistry.isEnabled(id) {
+            if isEnabled {
                 transferShelfModule.start()
             } else {
                 transferShelfModule.stop()
@@ -252,6 +236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func triggerScreenshot() {
+        guard moduleRegistry.isEnabled("screenshot") else { return }
         // ScreenshotModule 内部用 ScreenshotSession 防止重复触发
         screenshotModule.perform()
     }
@@ -276,10 +261,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DiagLog.write("DumpCaptureReference done exit=\(proc.terminationStatus)")
     }
 
-    @objc private func showHotkeyLog() {
-        NSWorkspace.shared.open(DiagLog.logURL)
-    }
-
     // MARK: - 快速片段
 
     @objc private func copySnippet(_ sender: NSMenuItem) {
@@ -290,17 +271,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func showSnippetManager() {
-        if snippetManagerWindow == nil {
-            snippetManagerWindow = SnippetManagerWindow()
-        }
-        snippetManagerWindow?.showAndFocus()
+    @objc private func showSettings() {
+        openSettings(category: 0)
     }
 
-    @objc private func showSettings() {
+    @objc private func showSnippetSettings() {
+        openSettings(category: 1)
+    }
+
+    private func openSettings(category: Int) {
         if settingsWindow == nil {
-            settingsWindow = SettingsWindow()
+            settingsWindow = SettingsWindow(
+                moduleRegistry: moduleRegistry,
+                onModuleStateChanged: { [weak self] id, isEnabled in
+                    self?.handleModuleStateChanged(id: id, isEnabled: isEnabled)
+                }
+            )
         }
-        settingsWindow?.showAndFocus()
+        settingsWindow?.showAndFocus(category: category)
     }
 }

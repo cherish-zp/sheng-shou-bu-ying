@@ -52,6 +52,8 @@ targets:
       - path: Sources/Shared
       - path: Sources/Modules
       - path: Sources/App/Settings
+      - path: Sources/App/Snippets/SnippetManager.swift
+      - path: Sources/App/Snippets/SnippetManagerWindow.swift
       - path: Sources/App/TransferShelf
       - path: Sources/App/Screenshot/PinWindow.swift
       - path: Sources/App/Screenshot/PinContextMenu.swift

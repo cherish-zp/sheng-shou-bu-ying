@@ -1,18 +1,24 @@
 import AppKit
 
 /// 设置窗口：左侧分类栏 + 右侧详情面板（仿系统设置布局）。
-/// 第一版含「贴图」分类（呼吸灯样式）；左侧栏结构为后续设置项预留扩展。
+/// 现包含「通用」「快速片段」「贴图」三个分类。
 final class SettingsWindow: NSWindow, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate {
 
     private var tableView: NSTableView!
     private var pinPane: PinSettingsPaneView!
+    private var generalPane: GeneralSettingsPaneView!
+    private var snippetPane: SnippetManagerView!
+    private let moduleRegistry: AppModuleRegistry
+    private let onModuleStateChanged: (String, Bool) -> Void
 
-    private let sidebarItems = ["贴图"]
+    private let sidebarItems = ["通用", "快速片段", "贴图"]
     private static let cellID = NSUserInterfaceItemIdentifier("settingsSidebarCell")
 
-    init() {
+    init(moduleRegistry: AppModuleRegistry, onModuleStateChanged: @escaping (String, Bool) -> Void) {
+        self.moduleRegistry = moduleRegistry
+        self.onModuleStateChanged = onModuleStateChanged
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 680, height: 420),
+            contentRect: NSRect(x: 0, y: 0, width: 780, height: 560),
             styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -21,12 +27,13 @@ final class SettingsWindow: NSWindow, NSWindowDelegate, NSTableViewDataSource, N
         titlebarAppearsTransparent = true
         center()
         isReleasedWhenClosed = false
-        minSize = NSSize(width: 560, height: 340)
+        minSize = NSSize(width: 680, height: 460)
         delegate = self
         buildUI()
     }
 
-    func showAndFocus() {
+    func showAndFocus(category: Int = 0) {
+        selectCategory(category)
         makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -75,10 +82,15 @@ final class SettingsWindow: NSWindow, NSWindowDelegate, NSTableViewDataSource, N
         scroll.documentView = tableView
         sidebar.addSubview(scroll)
 
-        // 右侧详情：贴图设置面板
+        // 右侧详情：分类设置面板
+        generalPane = GeneralSettingsPaneView(moduleRegistry: moduleRegistry)
+        generalPane.onModuleStateChanged = onModuleStateChanged
+        snippetPane = SnippetManagerView()
         pinPane = PinSettingsPaneView()
 
         split.addArrangedSubview(sidebar)
+        split.addArrangedSubview(generalPane)
+        split.addArrangedSubview(snippetPane)
         split.addArrangedSubview(pinPane)
         split.setHoldingPriority(NSLayoutConstraint.Priority(260), forSubviewAt: 0)
         sidebar.widthAnchor.constraint(equalToConstant: 180).isActive = true
@@ -98,6 +110,21 @@ final class SettingsWindow: NSWindow, NSWindowDelegate, NSTableViewDataSource, N
         ])
 
         tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+        selectCategory(0)
+    }
+
+    private func selectCategory(_ index: Int) {
+        guard tableView.selectedRow == index else {
+            tableView.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
+            return
+        }
+        applySelectedCategory(index)
+    }
+
+    private func applySelectedCategory(_ index: Int) {
+        generalPane?.isHidden = index != 0
+        snippetPane?.isHidden = index != 1
+        pinPane?.isHidden = index != 2
     }
 
     // MARK: - NSTableView
@@ -108,13 +135,14 @@ final class SettingsWindow: NSWindow, NSWindowDelegate, NSTableViewDataSource, N
         let cell = tableView.makeView(withIdentifier: Self.cellID, owner: nil) as? NSTableCellView
             ?? NSTableCellView()
         cell.identifier = Self.cellID
-        cell.textField = NSTextField(labelWithString: sidebarItems[row])
-        cell.textField?.font = .systemFont(ofSize: 13)
-        cell.textField?.translatesAutoresizingMaskIntoConstraints = false
-        cell.addSubview(cell.textField!)
+        let label = NSTextField(labelWithString: sidebarItems[row])
+        label.font = .systemFont(ofSize: 13)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        cell.addSubview(label)
+        cell.textField = label
         NSLayoutConstraint.activate([
-            cell.textField!.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 16),
-            cell.textField!.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 16),
+            label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
         ])
         return cell
     }
@@ -126,8 +154,8 @@ final class SettingsWindow: NSWindow, NSWindowDelegate, NSTableViewDataSource, N
             tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
             return
         }
-        // buildUI 早期（pinPane 尚未创建）也可能触发选中事件，容忍之
-        pinPane?.isHidden = row != 0
+        // buildUI 早期（右侧面板尚未创建）也可能触发选中事件，容忍之
+        applySelectedCategory(row)
     }
 }
 

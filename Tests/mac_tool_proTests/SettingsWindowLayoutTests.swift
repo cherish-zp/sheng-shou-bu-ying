@@ -6,20 +6,35 @@ import XCTest
 /// Auto Layout 断链后整窗内容堆叠错乱。
 final class SettingsWindowLayoutTests: XCTestCase {
 
-    private func makeLaidOutSplitView() -> NSSplitView {
-        let window = SettingsWindow()
+    private func makeLaidOutSplitView(selectedCategory: Int? = nil) -> NSSplitView {
+        let window = makeSettingsWindow()
+        if let selectedCategory {
+            if let tableView = findTableView(in: window.contentView!) {
+                tableView.selectRowIndexes(IndexSet(integer: selectedCategory), byExtendingSelection: false)
+            }
+        }
         window.contentView?.layoutSubtreeIfNeeded()
         guard let split = window.contentView?.subviews.compactMap({ $0 as? NSSplitView }).first else {
             fatalError("设置窗口内应存在 NSSplitView")
         }
-        XCTAssertEqual(split.arrangedSubviews.count, 2, "应有「分类栏 + 详情面板」两个子视图")
+        XCTAssertEqual(split.arrangedSubviews.count, 4, "应有「分类栏 + 通用 + 片段 + 贴图」四个子视图")
         return split
     }
 
+    private func makeSettingsWindow() -> SettingsWindow {
+        let defaults = UserDefaults(suiteName: "SettingsWindowLayoutTests")!
+        defaults.removePersistentDomain(forName: "SettingsWindowLayoutTests")
+        let registry = AppModuleRegistry(
+            hotkeyManager: HotkeyManager(registrar: FakeHotkeyRegistrar()),
+            configDefaults: defaults
+        )
+        return SettingsWindow(moduleRegistry: registry, onModuleStateChanged: { _, _ in })
+    }
+
     func test_layout_pinPaneSitsRightOfSidebar() {
-        let split = makeLaidOutSplitView()
+        let split = makeLaidOutSplitView(selectedCategory: 2)
         let sidebar = split.arrangedSubviews[0]
-        let pane = split.arrangedSubviews[1]
+        let pane = split.arrangedSubviews[3]
         XCTAssertGreaterThanOrEqual(
             pane.frame.minX, sidebar.frame.maxX - 0.5,
             "贴图面板应在分类栏右侧，不得与分类栏重叠（实际 pane.minX=\(pane.frame.minX), sidebar.maxX=\(sidebar.frame.maxX)）"
@@ -37,7 +52,7 @@ final class SettingsWindowLayoutTests: XCTestCase {
 
     func test_layout_paneContentFitsInsidePane() {
         let split = makeLaidOutSplitView()
-        let pane = split.arrangedSubviews[1]
+        let pane = split.arrangedSubviews[3]
         guard let stack = pane.subviews.compactMap({ $0 as? NSStackView }).first else {
             return XCTFail("贴图面板内应有纵向内容栈")
         }
@@ -81,7 +96,7 @@ final class SettingsWindowLayoutTests: XCTestCase {
 
     func test_layout_paneControlsDoNotOverlapEachOther() {
         let split = makeLaidOutSplitView()
-        let pane = split.arrangedSubviews[1]
+        let pane = split.arrangedSubviews[3]
         let controls = paneControls(in: pane)
 
         XCTAssertGreaterThanOrEqual(
@@ -103,7 +118,7 @@ final class SettingsWindowLayoutTests: XCTestCase {
 
     func test_layout_groupBoxContainsBothRadios() {
         let split = makeLaidOutSplitView()
-        let pane = split.arrangedSubviews[1]
+        let pane = split.arrangedSubviews[3]
 
         guard let box = findGroupBox(in: pane) else {
             return XCTFail("面板内应存在「呼吸灯样式」分组框")
@@ -139,7 +154,7 @@ final class SettingsWindowLayoutTests: XCTestCase {
     }
 
     func test_sidebar_disallowEmptySelection() {
-        let window = SettingsWindow()
+        let window = makeSettingsWindow()
         window.contentView?.layoutSubtreeIfNeeded()
         let tableView = findTableView(in: window.contentView!)
         XCTAssertNotNil(tableView, "设置窗口内应有分类列表")
@@ -150,10 +165,10 @@ final class SettingsWindowLayoutTests: XCTestCase {
     }
 
     func test_sidebar_deselectKeepsPaneVisible() {
-        let window = SettingsWindow()
+        let window = makeSettingsWindow()
         window.contentView?.layoutSubtreeIfNeeded()
         let split = window.contentView!.subviews.compactMap({ $0 as? NSSplitView }).first!
-        let pane = split.arrangedSubviews[1]
+        let pane = split.arrangedSubviews[0]
         guard let tableView = findTableView(in: window.contentView!) else {
             return XCTFail("设置窗口内应有分类列表")
         }
@@ -162,6 +177,19 @@ final class SettingsWindowLayoutTests: XCTestCase {
         tableView.selectRowIndexes(IndexSet(), byExtendingSelection: false)
 
         XCTAssertFalse(pane.isHidden, "取消选择时右侧详情面板不得消失")
-        XCTAssertEqual(tableView.selectedRow, 0, "取消选择后应恢复选中首项（贴图）")
+        XCTAssertEqual(tableView.selectedRow, 0, "取消选择后应恢复选中首项（通用）")
+    }
+
+    func test_sidebar_cellsKeepLabelsVisible() {
+        let window = makeSettingsWindow()
+        window.contentView?.layoutSubtreeIfNeeded()
+        guard let tableView = findTableView(in: window.contentView!) else {
+            return XCTFail("设置窗口内应有分类列表")
+        }
+
+        for row in 0..<tableView.numberOfRows {
+            let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: true) as? NSTableCellView
+            XCTAssertNotNil(cell?.textField, "分类单元格 \(row) 的标签必须保持存活")
+        }
     }
 }
