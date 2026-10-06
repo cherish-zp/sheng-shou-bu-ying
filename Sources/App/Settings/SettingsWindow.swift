@@ -1,3 +1,4 @@
+import AVFoundation
 import AppKit
 
 /// 设置窗口：左侧分类栏 + 右侧详情面板（仿系统设置布局）。
@@ -8,10 +9,11 @@ final class SettingsWindow: NSWindow, NSWindowDelegate, NSTableViewDataSource, N
     private var pinPane: PinSettingsPaneView!
     private var generalPane: GeneralSettingsPaneView!
     private var snippetPane: SnippetManagerView!
+    private var recordingPane: RecordingSettingsPaneView!
     private let moduleRegistry: AppModuleRegistry
     private let onModuleStateChanged: (String, Bool) -> Void
 
-    private let sidebarItems = ["通用", "快速片段", "贴图"]
+    private let sidebarItems = ["通用", "快速片段", "贴图", "录屏"]
     private static let cellID = NSUserInterfaceItemIdentifier("settingsSidebarCell")
 
     init(moduleRegistry: AppModuleRegistry, onModuleStateChanged: @escaping (String, Bool) -> Void) {
@@ -87,11 +89,13 @@ final class SettingsWindow: NSWindow, NSWindowDelegate, NSTableViewDataSource, N
         generalPane.onModuleStateChanged = onModuleStateChanged
         snippetPane = SnippetManagerView()
         pinPane = PinSettingsPaneView()
+        recordingPane = RecordingSettingsPaneView()
 
         split.addArrangedSubview(sidebar)
         split.addArrangedSubview(generalPane)
         split.addArrangedSubview(snippetPane)
         split.addArrangedSubview(pinPane)
+        split.addArrangedSubview(recordingPane)
         split.setHoldingPriority(NSLayoutConstraint.Priority(260), forSubviewAt: 0)
         sidebar.widthAnchor.constraint(equalToConstant: 180).isActive = true
 
@@ -125,6 +129,7 @@ final class SettingsWindow: NSWindow, NSWindowDelegate, NSTableViewDataSource, N
         generalPane?.isHidden = index != 0
         snippetPane?.isHidden = index != 1
         pinPane?.isHidden = index != 2
+        recordingPane?.isHidden = index != 3
     }
 
     // MARK: - NSTableView
@@ -358,5 +363,170 @@ final class PinSettingsPaneView: NSView {
         state.indicatorColorHex = selectedColorHex
         PinSettingsStore.defaultStore().save(state)
         NotificationCenter.default.post(name: .pinIndicatorStyleDidChange, object: nil)
+    }
+}
+
+/// 录屏设置面板：系统声音开关（默认开）、麦克风开关（默认关，开启时请求麦克风权限）、
+/// 帧率 30/60。更改立即写入 RecordingConfigStore 持久化，下次开录即生效。
+final class RecordingSettingsPaneView: NSView {
+
+    private let systemAudioSwitch = NSSwitch()
+    private let micSwitch = NSSwitch()
+    private let frameRateControl = NSSegmentedControl(labels: ["30 fps", "60 fps"],
+                                                      trackingMode: .selectOne, target: nil, action: nil)
+    private let store = RecordingConfigStore()
+
+    init() {
+        super.init(frame: .zero)
+        buildUI()
+        syncFromStore()
+    }
+
+    required init?(coder: NSCoder) { fatalError("unsupported") }
+
+    // MARK: - UI 构建
+
+    private func buildUI() {
+        let titleLabel = NSTextField(labelWithString: "录屏")
+        titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
+
+        let hintLabel = NSTextField(labelWithString: "F4 呼出录屏；更改立即生效于下一次录制。")
+        hintLabel.font = .systemFont(ofSize: 12)
+        hintLabel.textColor = .secondaryLabelColor
+
+        for sw in [systemAudioSwitch, micSwitch] {
+            sw.target = self
+            sw.controlSize = .regular
+        }
+        systemAudioSwitch.action = #selector(systemAudioChanged(_:))
+        micSwitch.action = #selector(micChanged(_:))
+
+        let systemAudioRow = makeRow(label: "系统声音", controls: [systemAudioSwitch])
+        let micRow = makeRow(label: "麦克风", controls: [micSwitch])
+        let audioStack = NSStackView(views: [systemAudioRow, micRow])
+        audioStack.orientation = .vertical
+        audioStack.alignment = .leading
+        audioStack.spacing = 10
+        audioStack.translatesAutoresizingMaskIntoConstraints = false
+        let audioBox = makeGroupBox(title: "音频", content: audioStack)
+
+        frameRateControl.target = self
+        frameRateControl.action = #selector(frameRateChanged(_:))
+        frameRateControl.selectedSegment = 0
+        let frameRateRow = makeRow(label: "帧率", controls: [frameRateControl])
+        let videoStack = NSStackView(views: [frameRateRow])
+        videoStack.orientation = .vertical
+        videoStack.alignment = .leading
+        videoStack.spacing = 10
+        videoStack.translatesAutoresizingMaskIntoConstraints = false
+        let videoBox = makeGroupBox(title: "视频", content: videoStack)
+
+        let savePathLabel = NSTextField(labelWithString: RecordingConfig.defaultSaveDirectory.path)
+        savePathLabel.font = .systemFont(ofSize: 11)
+        savePathLabel.textColor = .secondaryLabelColor
+        savePathLabel.lineBreakMode = .byTruncatingMiddle
+        let saveRow = makeRow(label: "保存到", controls: [savePathLabel])
+        let saveStack = NSStackView(views: [saveRow])
+        saveStack.orientation = .vertical
+        saveStack.alignment = .leading
+        saveStack.spacing = 10
+        saveStack.translatesAutoresizingMaskIntoConstraints = false
+        let saveBox = makeGroupBox(title: "输出", content: saveStack)
+
+        let stack = NSStackView(views: [titleLabel, hintLabel, audioBox, videoBox, saveBox])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 28),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -28),
+            stack.topAnchor.constraint(equalTo: topAnchor, constant: 24),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -24),
+        ])
+    }
+
+    /// 分组框：与 PinSettingsPaneView 同款（NSBox 需启用内容 Auto Layout 防塌缩）。
+    private func makeGroupBox(title: String, content: NSView) -> NSBox {
+        let box = NSBox()
+        box.title = title
+        box.titleFont = .systemFont(ofSize: 13, weight: .medium)
+        box.contentView = content
+        NSLayoutConstraint.activate([
+            box.topAnchor.constraint(equalTo: content.topAnchor, constant: -26),
+            box.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: 12),
+            box.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: -12),
+            box.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: 12),
+        ])
+        return box
+    }
+
+    /// 设置行：固定宽度标签 + 控件。
+    private func makeRow(label title: String, controls: [NSView]) -> NSView {
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 13)
+        label.widthAnchor.constraint(equalToConstant: 76).isActive = true
+        let row = NSStackView(views: [label] + controls)
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 10
+        return row
+    }
+
+    // MARK: - 状态同步与持久化
+
+    private func syncFromStore() {
+        let config = store.load()
+        systemAudioSwitch.state = config.systemAudioEnabled ? .on : .off
+        micSwitch.state = config.microphoneEnabled ? .on : .off
+        frameRateControl.selectedSegment = config.frameRate == .fps60 ? 1 : 0
+    }
+
+    private func persist(mutate: (inout RecordingConfig) -> Void) {
+        var config = store.load()
+        mutate(&config)
+        store.save(config)
+    }
+
+    // MARK: - 动作
+
+    @objc private func systemAudioChanged(_ sender: NSSwitch) {
+        persist { $0.systemAudioEnabled = sender.state == .on }
+    }
+
+    /// 麦克风开启时请求权限：拒绝则回拨开关；已拒绝过则提示去系统设置。
+    @objc private func micChanged(_ sender: NSSwitch) {
+        guard sender.state == .on else {
+            persist { $0.microphoneEnabled = false }
+            return
+        }
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            persist { $0.microphoneEnabled = true }
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+                DispatchQueue.main.async {
+                    guard let self = self else { return }
+                    self.micSwitch.state = granted ? .on : .off
+                    self.persist { $0.microphoneEnabled = granted }
+                }
+            }
+        default:
+            sender.state = .off
+            persist { $0.microphoneEnabled = false }
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "无法启用麦克风"
+            alert.informativeText = "麦克风权限已被拒绝，请在「系统设置 → 隐私与安全性 → 麦克风」中允许 mac_tool_pro。"
+            alert.addButton(withTitle: "好")
+            alert.runModal()
+        }
+    }
+
+    @objc private func frameRateChanged(_ sender: NSSegmentedControl) {
+        let rate: RecordingFrameRate = sender.selectedSegment == 1 ? .fps60 : .fps30
+        persist { $0.frameRate = rate }
     }
 }

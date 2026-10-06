@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 
 /// 贴图窗口：将截图钉在桌面上，始终置顶、可拖动、可关闭。
 /// 直接使用原始 CGImage 绘制，避免 NSImage 转换导致色差/模糊。
@@ -7,6 +8,9 @@ import AppKit
 /// 边缘发丝线会被误读为内容里的杂线。
 /// 呼吸灯样式可配置（横条/圆点），横条的高度/距顶部间距/颜色均可在设置中调整，
 /// 设置变更立即生效。
+/// 贴图增强（v2）：不透明度可调（20%-100%，会话内有效不持久化）、
+/// 鼠标穿透（ignoresMouseEvents，穿透中的贴图以虚线边框作视觉提示，
+/// 按 F6 全局恢复全部穿透贴图）。
 final class PinWindow: NSWindow {
 
     /// 贴图关闭时回调（用于协调器从列表中移除、释放图片）。
@@ -51,12 +55,19 @@ final class PinWindow: NSWindow {
         ])
         contentView = container
 
-        // 右键菜单：复制图片 + 关闭贴图（关闭走右键，取代原左上角悬停 X 按钮）
+        // 右键菜单：复制图片 + 不透明度 + 鼠标穿透 + 关闭贴图
+        // （关闭走右键，取代原左上角悬停 X 按钮；不透明度/穿透经闭包回到窗口本体）
         imageView.addContextMenu(PinContextMenu(
             pasteboard: SystemPasteboard(),
             imageProvider: { [weak imageView] in imageView?.cgImage },
             pointSizeProvider: { [weak imageView] in imageView?.originalSize ?? .zero },
-            closeHandler: { [weak self] in self?.closePin() }
+            closeHandler: { [weak self] in self?.closePin() },
+            opacityProvider: { [weak self] in
+                PinOpacityPolicy.percent(fromAlphaValue: Double(self?.alphaValue ?? 1))
+            },
+            opacityApplier: { [weak self] percent in self?.setOpacity(percent: percent) },
+            penetrationToggler: { [weak self] on in self?.setMousePenetrating(on) },
+            penetrationStateProvider: { [weak self] in self?.isMousePenetrating ?? false }
         ))
 
         // 呼吸灯样式与外观：读取设置（默认顶部横条，高 4pt、距顶 2pt、绿色）
@@ -77,12 +88,260 @@ final class PinWindow: NSWindow {
         if let observer = styleObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+        PenetratedPinRegistry.shared.remove(self)
     }
 
     /// 关闭贴图并通知协调器释放资源。
     @objc func closePin() {
         orderOut(nil)
+        if isMousePenetrating {
+            PenetratedPinRegistry.shared.remove(self)
+            isMousePenetrating = false
+        }
         onClose?()
+    }
+
+    // MARK: - 贴图增强：不透明度与鼠标穿透
+
+    /// 当前是否处于鼠标穿透态（穿透中的贴图对鼠标完全透明，仅 F6 可恢复交互）。
+    private(set) var isMousePenetrating = false
+
+    /// 设置不透明度（20-100，经 PinOpacityPolicy 夹取），拖动 slider 实时生效。
+    /// 不持久化：每张贴图独立、会话内有效。
+    func setOpacity(percent: Double) {
+        alphaValue = PinOpacityPolicy.alphaValue(for: percent)
+        DiagLog.write("PinWindow: opacity -> \(PinOpacityPolicy.clamped(percent))%")
+    }
+
+    /// 设置鼠标穿透：开启后贴图对鼠标完全透明（可点击其后方内容），
+    /// 登记到 PenetratedPinRegistry 并惰性注册 F6 逃生热键；关闭即恢复交互。
+    /// 穿透中的视觉提示：图片边框变为橙色虚线（不用透明度变化，避免与用户手动
+    /// 调节的不透明度相互覆盖）。
+    func setMousePenetrating(_ on: Bool) {
+        guard on != isMousePenetrating else { return }
+        isMousePenetrating = on
+        ignoresMouseEvents = on
+        (contentView as? PinWindowContentView)?.imageView?.isPenetrating = on
+        if on {
+            PenetratedPinRegistry.shared.add(self)
+            PinPenetrationEscape.shared.ensureRegistered()
+        } else {
+            PenetratedPinRegistry.shared.remove(self)
+        }
+        DiagLog.write("PinWindow: mouse penetration -> \(on)")
+    }
+
+    /// 从穿透态恢复交互（F6 逃生通道逐张调用）。
+    func restoreFromPenetration() {
+        setMousePenetrating(false)
+    }
+}
+
+/// 贴图穿透逃生通道：F6 全局热键恢复所有处于穿透态的贴图。
+/// 语义：穿透中的贴图 ignoresMouseEvents = true，右键菜单已不可达，
+/// F6 是唯一交互出口——按下后全部恢复并 Toast「已恢复 N 张贴图交互」。
+/// F6 为全局消费（系统默认把 F6 给「听写」等，本 App 抢占，自用可接受）。
+/// 实现说明：测试 target 只编译贴图两件套（PinWindow/PinContextMenu），
+/// 为保证其可独立编译，此处内联 Carbon RegisterEventHotKey/InstallEventHandler
+/// 而不引用 Screenshot 目录下的 CarbonHotkeyRegistrar；热键 id 取冷门值，
+/// 与 HotkeyManager 的自增 id 空间隔离，互相不干扰。
+final class PinPenetrationEscape {
+
+    static let shared = PinPenetrationEscape()
+
+    /// 本逃生热键的 Carbon id（0xF60006，避开 HotkeyManager 的自增小 id）。
+    private static let hotkeyID: UInt32 = 0xF60006
+
+    private var registered = false
+    private var handlerInstalled = false
+
+    private init() {}
+
+    /// 首次有贴图进入穿透态时调用：注册 F6 并安装分发 handler（幂等）。
+    func ensureRegistered() {
+        if !registered {
+            var ref: EventHotKeyRef?
+            let hotKeyID = EventHotKeyID(signature: OSType(0x6D745F70), id: PinPenetrationEscape.hotkeyID)
+            let status = RegisterEventHotKey(Hotkey.f6.keyCode, Hotkey.f6.modifiers, hotKeyID,
+                                             GetApplicationEventTarget(), 0, &ref)
+            guard status == noErr, ref != nil else {
+                DiagLog.write("PinPenetrationEscape: RegisterEventHotKey F6 failed status=\(status)")
+                return
+            }
+            registered = true
+            DiagLog.write("PinPenetrationEscape: F6 registered (restore penetrated pins)")
+        }
+        installHandlerIfNeeded()
+    }
+
+    /// 安装 Carbon 事件 handler（幂等）。handler 是 C 函数指针，不能捕获上下文，
+    /// 经静态类型转发；只处理自己的 hotkey id，其余热键（如 HotkeyManager 的 F1）原样放行。
+    private func installHandlerIfNeeded() {
+        guard !handlerInstalled else { return }
+        handlerInstalled = true
+        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        let handler: EventHandlerUPP = { _, eventRef, _ in
+            guard let eventRef = eventRef else { return noErr }
+            var hotKeyID = EventHotKeyID(signature: 0, id: 0)
+            let status = GetEventParameter(eventRef,
+                                           EventParamName(kEventParamDirectObject),
+                                           EventParamType(typeEventHotKeyID),
+                                           nil,
+                                           MemoryLayout<EventHotKeyID>.size,
+                                           nil,
+                                           &hotKeyID)
+            guard status == noErr, hotKeyID.id == PinPenetrationEscape.hotkeyID else { return noErr }
+            DispatchQueue.main.async {
+                PinPenetrationEscape.shared.restoreAllPenetrated()
+            }
+            return noErr
+        }
+        let installStatus = InstallEventHandler(GetApplicationEventTarget(), handler, 1, &spec, nil, nil)
+        DiagLog.write("PinPenetrationEscape: InstallEventHandler status=\(installStatus)")
+    }
+
+    /// 恢复全部穿透态贴图并提示数量。
+    private func restoreAllPenetrated() {
+        let pins = PenetratedPinRegistry.shared.removeAllEntries()
+        for pin in pins {
+            (pin as? PinWindow)?.restoreFromPenetration()
+        }
+        guard !pins.isEmpty else { return }
+        TransientHudToast.show(text: "已恢复 \(pins.count) 张贴图交互")
+        DiagLog.write("PinPenetrationEscape: restored \(pins.count) penetrated pin(s)")
+    }
+}
+
+/// 通用轻量 HUD 提示：毛玻璃面板、屏幕顶部居中、淡入淡出自动消失。
+/// 定义于贴图文件供「F6 恢复贴图」与取色器复制提示共用（层级取
+/// screenSaver+2，保证盖在全屏取色覆盖层之上；CopyToastPresenter 的
+/// .statusBar 层级会被取色覆盖层遮挡）。
+final class TransientHudToast {
+
+    private static var currentPanel: NSPanel?
+    private static var hideWorkItem: DispatchWorkItem?
+    private static var generation = 0
+
+    private enum Spec {
+        static let fadeInDuration: TimeInterval = 0.18
+        static let visibleDuration: TimeInterval = 1.6
+        static let fadeOutDuration: TimeInterval = 0.28
+        static let cornerRadius: CGFloat = 14
+        static let topGap: CGFloat = 8
+        static let iconSize: CGFloat = 18
+        static let level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 2)
+    }
+
+    /// 展示一条提示（连续调用时旧提示的定时隐藏作废）。
+    static func show(text: String) {
+        DispatchQueue.main.async {
+            present(text: text)
+        }
+    }
+
+    private static func present(text: String) {
+        generation += 1
+        let currentGeneration = generation
+        hideWorkItem?.cancel()
+        hideWorkItem = nil
+
+        let panel = makePanel(text: text)
+        currentPanel = panel
+        position(panel)
+
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = Spec.fadeInDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().alphaValue = 1
+        })
+
+        let item = DispatchWorkItem {
+            guard generation == currentGeneration else { return }
+            dismiss(panel)
+        }
+        hideWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + Spec.fadeInDuration + Spec.visibleDuration, execute: item)
+    }
+
+    private static func makePanel(text: String) -> NSPanel {
+        let font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        let textWidth = ceil((text as NSString).size(withAttributes: [.font: font]).width)
+        let panelWidth = min(520, 14 + Spec.iconSize + 7 + textWidth + 14)
+        let panelHeight: CGFloat = 44
+
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.level = Spec.level
+        panel.collectionBehavior = [.canJoinAllSpaces, .ignoresCycle]
+        panel.hidesOnDeactivate = false
+
+        let visual = NSVisualEffectView()
+        visual.material = .hudWindow
+        visual.blendingMode = .behindWindow
+        visual.state = .active
+        visual.wantsLayer = true
+        visual.layer?.cornerRadius = Spec.cornerRadius
+        visual.layer?.masksToBounds = true
+        visual.translatesAutoresizingMaskIntoConstraints = false
+        panel.contentView = visual
+
+        let symbol = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: text) ?? NSImage()
+        let icon = NSImageView(image: symbol)
+        icon.contentTintColor = .controlAccentColor
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        visual.addSubview(icon)
+
+        let label = NSTextField(labelWithString: text)
+        label.font = font
+        label.textColor = .labelColor
+        label.lineBreakMode = .byTruncatingMiddle
+        label.translatesAutoresizingMaskIntoConstraints = false
+        visual.addSubview(label)
+
+        NSLayoutConstraint.activate([
+            icon.leadingAnchor.constraint(equalTo: visual.leadingAnchor, constant: 14),
+            icon.centerYAnchor.constraint(equalTo: visual.centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: Spec.iconSize),
+            icon.heightAnchor.constraint(equalToConstant: Spec.iconSize),
+
+            label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 7),
+            label.centerYAnchor.constraint(equalTo: visual.centerYAnchor),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: visual.trailingAnchor, constant: -14),
+        ])
+        return panel
+    }
+
+    /// 定位到主屏可见区顶部居中。
+    private static func position(_ panel: NSPanel) {
+        guard let screen = NSScreen.main else { return }
+        let visible = screen.visibleFrame
+        let origin = NSPoint(
+            x: visible.midX - panel.frame.width / 2,
+            y: visible.maxY - panel.frame.height - Spec.topGap
+        )
+        panel.setFrameOrigin(origin)
+    }
+
+    private static func dismiss(_ panel: NSPanel?) {
+        guard let panel = panel else { return }
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = Spec.fadeOutDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            panel.animator().alphaValue = 0
+        }, completionHandler: {
+            guard panel.alphaValue == 0 else { return }
+            panel.orderOut(nil)
+            if currentPanel === panel { currentPanel = nil }
+        })
     }
 }
 
@@ -109,6 +368,11 @@ final class PinImageView: NSView {
     var cgImage: CGImage?
     /// 贴图基础圆角半径（点，未缩放时口径），用于呼吸灯贴合图片圆角；0 表示直角。
     var baseCornerRadius: CGFloat = 0
+    /// 是否处于鼠标穿透态：true 时边框改为橙色虚线作视觉提示
+    /// （不透明度提示会与用户手动调节的透明度相互覆盖，故用边框形态区分）。
+    var isPenetrating = false {
+        didSet { needsDisplay = true }
+    }
     private var closeButton: PinCloseButton?
     private var indicatorBar: PinIndicatorBar?
     /// 贴图原始点尺寸（创建时传入的 displaySize，未随滚轮缩放变化），
@@ -154,15 +418,25 @@ final class PinImageView: NSView {
         // 显示层描 1pt 边框（跟随贴图圆角、随缩放同步）让弧度在任何背景上可见。
         // 仅显示层，不修改图片像素（复制/保存内容不变）。
         let radius = CornerRounding.clampedRadius(baseCornerRadius * currentScale, for: bounds.size)
-        ctx.setStrokeColor(NSColor.black.withAlphaComponent(0.20).cgColor)
-        ctx.setLineWidth(1)
         let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
+        if isPenetrating {
+            // 鼠标穿透视觉提示：橙色虚线（宽 2pt、dash 6/4），穿透中的贴图一眼可辨
+            ctx.setStrokeColor(NSColor.systemOrange.withAlphaComponent(0.9).cgColor)
+            ctx.setLineWidth(2)
+            ctx.setLineDash(phase: 0, lengths: [6, 4])
+        } else {
+            ctx.setStrokeColor(NSColor.black.withAlphaComponent(0.20).cgColor)
+            ctx.setLineWidth(1)
+        }
         if radius > 0 {
             ctx.addPath(CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))
         } else {
             ctx.addRect(rect)
         }
         ctx.strokePath()
+        if isPenetrating {
+            ctx.setLineDash(phase: 0, lengths: [])
+        }
     }
 
     /// 按设置应用呼吸灯：样式（横条/圆点）+ 横条外观（高度/距顶部间距/颜色）。

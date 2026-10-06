@@ -93,6 +93,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if moduleRegistry.isEnabled(transferShelfModule.id) {
             transferShelfModule.start()
         }
+
+        moduleRegistry.register(ScreenRecordingModule())
+        moduleRegistry.register(ColorPickerModule())
     }
 
     /// 热键监听：三层兜底确保 F1 能触发截图。
@@ -184,6 +187,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(item)
         }
 
+        // 重复上次截图区域（对新鲜屏幕帧重截并复制，无覆盖层）
+        menu.addItem(.separator())
+        let repeatItem = NSMenuItem(title: "重复上次截图区域", action: #selector(repeatLastRegion), keyEquivalent: "")
+        repeatItem.target = self
+        repeatItem.isEnabled = moduleRegistry.isEnabled("screenshot")
+        menu.addItem(repeatItem)
+
         // 快速片段
         menu.addItem(.separator())
         let snippetsHeader = menu.addItem(withTitle: "快速片段", action: nil, keyEquivalent: "")
@@ -239,6 +249,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard moduleRegistry.isEnabled("screenshot") else { return }
         // ScreenshotModule 内部用 ScreenshotSession 防止重复触发
         screenshotModule.perform()
+    }
+
+    /// 菜单栏「重复上次截图区域」：无记录/捕获失败时 beep 提示（控制器内部已记 diag.log）。
+    @objc private func repeatLastRegion() {
+        if !LastRegionRepeatController.shared.repeatAndCopy() {
+            NSSound.beep()
+        }
     }
 
     /// 诊断：同一时刻分别用 App 捕获路径（CGDisplayCreateImage）与系统

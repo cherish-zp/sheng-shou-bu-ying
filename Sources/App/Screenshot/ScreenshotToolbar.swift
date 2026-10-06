@@ -9,6 +9,8 @@ protocol ScreenshotToolbarDelegate: AnyObject {
     func toolbarDidSetShadowOpacity(_ opacity: CGFloat)
     func toolbarDidUndo()
     func toolbarDidRequestOCR()
+    func toolbarDidRequestOCRAndCopy()
+    func toolbarDidRequestDelay(seconds: Int)
     func toolbarDidCopy()
     func toolbarDidSave()
     func toolbarDidPin()
@@ -25,6 +27,7 @@ final class ScreenshotToolbar: NSWindow {
     private var canvasButton: NSButton?
     private var canvasPanel: NSPanel?
     private var morePanel: NSPanel?
+    private var delayPanel: NSPanel?
     /// 子面板打开期间的点击外部关闭监控（本地+全局），全部关闭时移除
     private var dismissMonitors: (local: Any?, global: Any?)?
     private var shadowToggleButton: NSButton?
@@ -98,6 +101,8 @@ final class ScreenshotToolbar: NSWindow {
         x = addToolButton(container, x: x + 4, y: y, size: btnSize, tool: .arrow, symbol: "arrow.up.right", tooltip: "箭头")
         x = addToolButton(container, x: x + 4, y: y, size: btnSize, tool: .text, symbol: "textformat", tooltip: "文案")
         x = addToolButton(container, x: x + 4, y: y, size: btnSize, tool: .mosaic, symbol: "square.dashed", tooltip: "马赛克")
+        x = addToolButton(container, x: x + 4, y: y, size: btnSize, tool: .counter,
+                          symbol: "number.square", tooltip: "序号标注（点击画布放置，重新选中复位为 1）")
 
         // 画布按钮：点击展开子面板（圆角 + 阴影）
         let cvBtn = NSButton(frame: NSRect(x: x + 6, y: y, width: btnSize, height: btnSize))
@@ -145,6 +150,21 @@ final class ScreenshotToolbar: NSWindow {
         moreBtn.action = #selector(moreTapped)
         container.addSubview(moreBtn)
         container.registerTooltipButton(moreBtn, text: "更多")
+        x += 4 + btnSize
+
+        // 延时截图按钮：点击展开子面板（3s/5s/10s），倒计时结束抓新鲜帧
+        let delayBtn = NSButton(frame: NSRect(x: x + 4, y: y, width: btnSize, height: btnSize))
+        delayBtn.image = NSImage(systemSymbolName: "timer", accessibilityDescription: "延时截图")
+        delayBtn.image?.isTemplate = true
+        delayBtn.contentTintColor = NSColor(calibratedWhite: 0.12, alpha: 1)
+        delayBtn.isBordered = false
+        delayBtn.wantsLayer = true
+        delayBtn.layer?.cornerRadius = 6
+        delayBtn.title = ""
+        delayBtn.target = self
+        delayBtn.action = #selector(delayTapped)
+        container.addSubview(delayBtn)
+        container.registerTooltipButton(delayBtn, text: "延时截图")
         x += 4 + btnSize
 
         // 分隔线
@@ -414,10 +434,23 @@ final class ScreenshotToolbar: NSWindow {
         toolbarDelegate?.toolbarDidRequestOCR()
     }
 
-    // MARK: - 更多工具子面板
+    @objc private func ocrCopyTapped() {
+        closeMorePanel()
+        toolbarDelegate?.toolbarDidRequestOCRAndCopy()
+    }
 
-    private func showMorePanel() {
-        let panelWidth: CGFloat = 80
+    // MARK: - 延时截图子面板
+
+    @objc private func delayTapped() {
+        if delayPanel != nil { closeDelayPanel(); return }
+        showDelayPanel()
+    }
+
+    /// 显示延时档位子面板：3s / 5s / 10s 横排三个按钮，tag 即秒数。
+    private func showDelayPanel() {
+        let btnWidth: CGFloat = 40
+        let spacing: CGFloat = 6
+        let panelWidth = CGFloat(3) * btnWidth + CGFloat(2) * spacing + 16
         let panelHeight: CGFloat = 44
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight),
                             styleMask: [.borderless, .nonactivatingPanel],
@@ -439,7 +472,78 @@ final class ScreenshotToolbar: NSWindow {
         card.layer?.borderColor = NSColor.black.withAlphaComponent(0.06).cgColor
         panel.contentView?.addSubview(card)
 
-        // 识字按钮（OCR 文字识别）
+        var dx: CGFloat = 8
+        for seconds in [3, 5, 10] {
+            let btn = NSButton(frame: NSRect(x: dx, y: 8, width: btnWidth, height: 28))
+            btn.wantsLayer = true
+            btn.layer?.cornerRadius = 6
+            btn.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.04).cgColor
+            btn.isBordered = false
+            btn.attributedTitle = NSAttributedString(string: "\(seconds)s", attributes: [
+                .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+                .foregroundColor: NSColor(calibratedWhite: 0.12, alpha: 1)
+            ])
+            btn.title = ""
+            btn.tag = seconds
+            btn.toolTip = "\(seconds) 秒后截取当前画面"
+            btn.target = self
+            btn.action = #selector(delaySelected(_:))
+            card.addSubview(btn)
+            dx += btnWidth + spacing
+        }
+
+        // 定位子面板在工具栏下方（与其他子面板一致）
+        let screenFrame = self.screen?.frame ?? NSScreen.main?.frame ?? .zero
+        let pos = CanvasPanelPositioner.position(
+            toolbarFrame: self.frame,
+            panelSize: CGSize(width: panelWidth, height: panelHeight),
+            screenFrame: screenFrame
+        )
+        panel.setFrameOrigin(pos)
+
+        panel.orderFrontRegardless()
+        delayPanel = panel
+        updateDismissMonitor()
+    }
+
+    @objc private func delaySelected(_ sender: NSButton) {
+        closeDelayPanel()
+        toolbarDelegate?.toolbarDidRequestDelay(seconds: sender.tag)
+    }
+
+    func closeDelayPanel() {
+        delayPanel?.orderOut(nil)
+        delayPanel = nil
+        updateDismissMonitor()
+    }
+
+    // MARK: - 更多工具子面板
+
+    /// 显示更多工具子面板：识字（弹结果面板）+ 识字并复制（静默直达剪贴板）。
+    private func showMorePanel() {
+        let panelWidth: CGFloat = 120
+        let panelHeight: CGFloat = 44
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight),
+                            styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 3)
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.isMovable = false
+        panel.acceptsMouseMovedEvents = true
+
+        let card = NSView(frame: panel.contentView!.bounds)
+        card.wantsLayer = true
+        card.layer?.cornerRadius = 12
+        card.layer?.masksToBounds = true
+        card.layer?.backgroundColor = NSColor(srgbRed: 0.89, green: 0.89, blue: 0.89, alpha: 0.98).cgColor
+        card.layer?.borderWidth = 1
+        card.layer?.borderColor = NSColor.black.withAlphaComponent(0.06).cgColor
+        panel.contentView?.addSubview(card)
+
+        // 识字按钮（OCR 文字识别，弹结果面板）
         let ocrBtn = NSButton(frame: NSRect(x: 8, y: 8, width: 28, height: 28))
         ocrBtn.image = NSImage(systemSymbolName: "doc.text.viewfinder", accessibilityDescription: "识字")
         ocrBtn.image?.isTemplate = true
@@ -451,6 +555,19 @@ final class ScreenshotToolbar: NSWindow {
         ocrBtn.target = self
         ocrBtn.action = #selector(ocrTapped)
         card.addSubview(ocrBtn)
+
+        // 识字并复制按钮（静默路径：结果直接写剪贴板 + Toast，不弹面板）
+        let ocrCopyBtn = NSButton(frame: NSRect(x: 48, y: 8, width: 28, height: 28))
+        ocrCopyBtn.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: "识字并复制")
+        ocrCopyBtn.image?.isTemplate = true
+        ocrCopyBtn.contentTintColor = NSColor(calibratedWhite: 0.12, alpha: 1)
+        ocrCopyBtn.isBordered = false
+        ocrCopyBtn.wantsLayer = true
+        ocrCopyBtn.layer?.cornerRadius = 6
+        ocrCopyBtn.title = ""
+        ocrCopyBtn.target = self
+        ocrCopyBtn.action = #selector(ocrCopyTapped)
+        card.addSubview(ocrCopyBtn)
 
         // 定位子面板在工具栏下方
         let screenFrame = self.screen?.frame ?? NSScreen.main?.frame ?? .zero
@@ -475,7 +592,7 @@ final class ScreenshotToolbar: NSWindow {
     // MARK: - 子面板点击外部关闭
 
     /// 当前打开的所有子面板。
-    private var openPanels: [NSPanel] { [morePanel, canvasPanel, colorPanel].compactMap { $0 } }
+    private var openPanels: [NSPanel] { [morePanel, delayPanel, canvasPanel, colorPanel].compactMap { $0 } }
 
     /// 任一子面板打开/关闭后同步监控状态：有面板时安装，全关时移除。
     private func updateDismissMonitor() {
@@ -505,11 +622,12 @@ final class ScreenshotToolbar: NSWindow {
         }
     }
 
-    /// 关闭全部子面板（更多/画布/颜色），截图会话结束时必须调用，
+    /// 关闭全部子面板（更多/延时/画布/颜色），截图会话结束时必须调用，
     /// 防止面板在工具条窗口销毁后成为孤儿窗口残留屏幕。
     func closeAllPanels() {
         closeCanvasPanel()
         closeMorePanel()
+        closeDelayPanel()
         cleanupColorPanel()
     }
 

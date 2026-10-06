@@ -29,6 +29,24 @@ final class ScreenshotCoordinator {
     /// 统一保存服务（普通截图与长截图结果窗共用，成败均有提示，见 ScreenshotSaveService）。
     private lazy var saveService = ScreenshotSaveService(feedback: feedback)
 
+    // MARK: 延时截图 / 重复上次区域 / OCR 增强 状态
+
+    /// 最近一次成功截图选区记录（UserDefaults 持久化，「重复上次区域」数据源）。
+    private let lastRegionStore = LastRegionStore()
+    /// 新鲜帧捕获 + 裁剪（延时截图结束与重复上次区域共用组件）。
+    private let freshFrames = FreshFrameProvider()
+    /// 延时倒计时状态机（schedule 注入主队列 DispatchWorkItem）。
+    private var delayCountdown: DelayCaptureCountdown?
+    private var delayCaptureWorkItem: DispatchWorkItem?
+    /// 倒计时浮窗（选区所在屏全屏透明窗，大号数字）。
+    private var countdownWindow: ScreenshotCountdownWindow?
+    /// 轻量 Toast（自定义文案：静默 OCR「已复制 N 字」等），层级对齐 feedback（screenSaver+3）。
+    private var toastPanel: NSPanel?
+    private var toastHideWorkItem: DispatchWorkItem?
+    private var toastGeneration = 0
+    /// OCR 结果面板顶部二维码文本视图（复制按钮取值用）。
+    private var ocrQRTextView: NSTextView?
+
     // MARK: 长截图状态（采集期）
 
     private var scrollController: ScrollCaptureController?
@@ -279,6 +297,8 @@ final class ScreenshotCoordinator {
         cancelIdleTimeout()
         activeOverlay = window
         selectionRect = rect
+        // 「重复上次区域」数据源：选区完成即记录（选区移动/缩放时随 onSelectionChanged 更新）
+        recordLastRegion(rect: rect, screen: window.screen)
        window.overlayView!.isEditMode = true
         // 不自动选标注工具：默认光标模式，用户从工具条选择后才开始画标注
         window.overlayView!.currentTool = nil
@@ -287,8 +307,9 @@ final class ScreenshotCoordinator {
             canvasSettings.cornerRadius, for: rect.size)
         window.overlayView!.needsDisplay = true
         // 选区移动/缩放后同步协调器的 selectionRect，确保后续贴图/保存裁剪正确
-       window.overlayView!.onSelectionChanged = { [weak self] newRect in
+       window.overlayView!.onSelectionChanged = { [weak self, weak window] newRect in
            self?.selectionRect = newRect
+           self?.recordLastRegion(rect: newRect, screen: window?.screen)
        }
         // 标注变化时同步撤销按钮可用状态
         window.overlayView!.onAnnotationsChanged = { [weak self] in
@@ -296,6 +317,19 @@ final class ScreenshotCoordinator {
             self?.toolbar?.updateUndoButton(canUndo: view.annotations.canUndo)
         }
 
+        buildToolbar(for: window, rect: rect)
+
+        for w in overlayWindows where w !== window {
+            w.orderOut(nil)
+        }
+        // 不调用 window.makeKey()：那会把覆盖层提到最前面遮住工具条。
+        // nonactivatingPanel 不抢 key，覆盖层从 start() 起即为 key，可正常接收鼠标事件。
+        DiagLog.write("Edit mode ready: currentTool=nil, toolbar shown above overlay")
+    }
+
+    /// 创建并显示工具条（选区上方定位 + 圆角/阴影状态同步）。
+    /// 选区完成与延时截图结束（恢复编辑态）共用。
+    private func buildToolbar(for window: ScreenshotOverlayWindow, rect: CGRect) {
         let toolbar = ScreenshotToolbar()
         toolbar.toolbarDelegate = self
         let tbFrame = toolbar.frame
@@ -307,20 +341,25 @@ final class ScreenshotCoordinator {
         toolbar.setFrameOrigin(pos)
         // 工具条为 nonactivatingPanel，仅显示不抢占 key；保持覆盖层为 key 窗口，
         // 否则点击覆盖层时首击被窗口激活吞掉、无法绘制标注
-       toolbar.orderFrontRegardless()
+        toolbar.orderFrontRegardless()
         self.toolbar = toolbar
         // 同步圆角按钮状态（默认已启用圆角）
         toolbar.updateCornerRadius(window.overlayView!.cornerRadius)
         // 同步阴影状态
         toolbar.updateCanvasShadowButton(enabled: canvasSettings.shadowEnabled)
         toolbar.updateCanvasShadowOpacity(canvasSettings.shadowOpacity)
+    }
 
-        for w in overlayWindows where w !== window {
-            w.orderOut(nil)
-        }
-        // 不调用 window.makeKey()：那会把覆盖层提到最前面遮住工具条。
-        // nonactivatingPanel 不抢 key，覆盖层从 start() 起即为 key，可正常接收鼠标事件。
-        DiagLog.write("Edit mode ready: currentTool=nil, toolbar shown above overlay")
+    // MARK: 重复上次区域（记录侧）
+
+    /// 记录最近一次成功截图的选区（UserDefaults 持久化，「重复上次区域」由
+    /// LastRegionRepeatController.repeatAndCopy() 读取，集成者在菜单栏菜单接线）。
+    private func recordLastRegion(rect: CGRect, screen: NSScreen?) {
+        guard let screen = screen,
+              let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+        else { return }
+        lastRegionStore.save(LastRegionRecord(
+            rect: rect, displayID: displayID, screenPointSize: screen.frame.size))
     }
 
     // MARK: 重选（编辑态框外点击重新框选/点选窗口）
@@ -473,6 +512,14 @@ final class ScreenshotCoordinator {
             cleanupScrollCapture()
         }
         cancelIdleTimeout()
+        // 延时截图资源：取消倒计时、移除浮窗与 Toast（ESC 取消延时也走此路径）
+        delayCountdown?.cancel()
+        delayCountdown = nil
+        delayCaptureWorkItem?.cancel()
+        delayCaptureWorkItem = nil
+        countdownWindow?.orderOut(nil)
+        countdownWindow = nil
+        dismissToast()
         for w in overlayWindows { w.orderOut(nil) }
         toolbar?.closeAllPanels()
         toolbar?.orderOut(nil)
@@ -513,6 +560,10 @@ extension ScreenshotCoordinator: ScreenshotToolbarDelegate {
     func toolbarDidSelect(tool: AnnotationType?) {
         DiagLog.write("toolbarDidSelect: tool=\(String(describing: tool)) activeOverlay=\(activeOverlay != nil)")
         activeOverlay?.overlayView!.currentTool = tool
+        // 序号标注复位语义：每次重新选中该工具，序号从 1 重新开始
+        if tool == .counter {
+            activeOverlay?.overlayView!.annotations.resetCounter()
+        }
     }
 
     func toolbarDidSelectColor(_ color: AnnotationColor) {
@@ -548,46 +599,91 @@ extension ScreenshotCoordinator: ScreenshotToolbarDelegate {
         DiagLog.write("toolbarDidSetShadowOpacity: opacity=\(opacity)")
     }
 
-    func toolbarDidRequestOCR() {
-        guard let overlay = activeOverlay, let view = overlay.overlayView,
-              let sel = selectionRect else { return }
+    /// 从预捕获帧裁出选区像素图（OCR 等共用）。
+    private func croppedSelectionImage(overlay: ScreenshotOverlayWindow, selection: CGRect) -> CGImage? {
+        let view = overlay.overlayView!
         let image = view.capturedImage
         let cropRect = SelectionRect.cropRectPixels(
-            selection: sel, imageSize: CGSize(width: image.width, height: image.height),
+            selection: selection, imageSize: CGSize(width: image.width, height: image.height),
             viewSize: view.bounds.size
         )
-        guard let cropped = image.cropping(to: cropRect) else { return }
-        DiagLog.write("toolbarDidRequestOCR: starting OCR on \(cropped.width)x\(cropped.height) image")
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let request = VNRecognizeTextRequest { request, error in
-                guard error == nil,
-                      let observations = request.results as? [VNRecognizedTextObservation] else {
-                    DispatchQueue.main.async { self?.showOCRResult("识别失败") }
-                    return
-                }
-                let items = observations.compactMap { obs -> OCRTextItem? in
-                    guard let candidate = obs.topCandidates(1).first else { return nil }
-                    return OCRTextItem(text: candidate.string, confidence: candidate.confidence,
-                                       boundingBox: obs.boundingBox)
-                }
-                let filtered = OCRTextSorter.filterByConfidence(items)
-                let text = OCRTextSorter.toText(filtered)
-                DiagLog.write("toolbarDidRequestOCR: recognized \(filtered.count) items")
-                DispatchQueue.main.async { self?.showOCRResult(text) }
-            }
-            request.recognitionLevel = .accurate
-            request.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US"]
-            request.usesLanguageCorrection = true
-            let handler = VNImageRequestHandler(cgImage: cropped)
-            try? handler.perform([request])
+        return image.cropping(to: cropRect)
+    }
+
+    /// 共用 OCR 执行：Vision accurate 文字识别 + CoreImage 二维码检测（同图同后台队列），
+    /// 完成回主线程。文字与二维码分别交付，互不依赖。
+    private func runOCR(on image: CGImage,
+                        completion: @escaping (_ text: String, _ qrCodes: [String]) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let text = Self.recognizeText(in: image) ?? ""
+            let qrCodes = QRCodeDetector.detect(in: image)
+            DiagLog.write("runOCR: text=\(text.isEmpty ? "empty" : "\(text.count) chars") qrcodes=\(qrCodes.count)")
+            DispatchQueue.main.async { completion(text, qrCodes) }
         }
     }
 
-    /// 显示 OCR 识别结果面板（可编辑 + 复制）。
-    private func showOCRResult(_ text: String) {
+    /// Vision 文字识别（同步，须在后台队列调用）。失败返回 nil（与空文本区分）。
+    private static func recognizeText(in image: CGImage) -> String? {
+        var result: String?
+        let request = VNRecognizeTextRequest { request, error in
+            guard error == nil,
+                  let observations = request.results as? [VNRecognizedTextObservation] else {
+                return
+            }
+            let items = observations.compactMap { obs -> OCRTextItem? in
+                guard let candidate = obs.topCandidates(1).first else { return nil }
+                return OCRTextItem(text: candidate.string, confidence: candidate.confidence,
+                                   boundingBox: obs.boundingBox)
+            }
+            let filtered = OCRTextSorter.filterByConfidence(items)
+            result = OCRTextSorter.toText(filtered)
+        }
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US"]
+        request.usesLanguageCorrection = true
+        let handler = VNImageRequestHandler(cgImage: image)
+        try? handler.perform([request])
+        return result
+    }
+
+    func toolbarDidRequestOCR() {
+        guard let overlay = activeOverlay, let sel = selectionRect,
+              let cropped = croppedSelectionImage(overlay: overlay, selection: sel) else { return }
+        DiagLog.write("toolbarDidRequestOCR: starting OCR on \(cropped.width)x\(cropped.height) image")
+        runOCR(on: cropped) { [weak self] text, qrCodes in
+            self?.showOCRResult(text: text, qrCodes: qrCodes)
+        }
+    }
+
+    /// 静默 OCR：「识字并复制」直达路径——不弹结果面板，识别结果直接写剪贴板 + Toast。
+    /// 仅二维码无文字时复制二维码内容；两者皆无时提示未识别到内容。
+    func toolbarDidRequestOCRAndCopy() {
+        guard let overlay = activeOverlay, let sel = selectionRect,
+              let cropped = croppedSelectionImage(overlay: overlay, selection: sel) else { return }
+        runOCR(on: cropped) { [weak self] text, qrCodes in
+            guard let self = self else { return }
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            if !text.isEmpty {
+                if pb.setString(text, forType: .string) {
+                    self.showToast("已复制 \(text.count) 字")
+                }
+            } else if let qr = qrCodes.first {
+                if pb.setString(qr, forType: .string) {
+                    self.showToast("已复制二维码：\(QRCodeDetector.summary(of: qr))")
+                }
+            } else {
+                self.showToast("未识别到内容")
+            }
+        }
+    }
+
+    /// 显示 OCR 识别结果面板（可编辑 + 复制；检出二维码时顶部加「二维码内容」区块）。
+    private func showOCRResult(text: String, qrCodes: [String] = []) {
         ocrResultPanel?.orderOut(nil)
+        let hasQR = !qrCodes.isEmpty
         let panelWidth: CGFloat = 420
-        let panelHeight: CGFloat = 300
+        let panelHeight: CGFloat = hasQR ? 396 : 300
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight),
                             styleMask: [.titled, .closable, .resizable],
                             backing: .buffered, defer: false)
@@ -600,6 +696,60 @@ extension ScreenshotCoordinator: ScreenshotToolbarDelegate {
         let content = NSView(frame: panel.contentView!.bounds)
         content.autoresizingMask = [.width, .height]
         panel.contentView = content
+
+        // 二维码区块（仅命中时创建）：标题 + 可选中内容 + 复制按钮
+        var qrBottomAnchor: NSLayoutYAxisAnchor = content.topAnchor
+        if hasQR {
+            let qrContainer = NSView()
+            qrContainer.wantsLayer = true
+            qrContainer.layer?.borderWidth = 1
+            qrContainer.layer?.borderColor = NSColor.separatorColor.cgColor
+            qrContainer.layer?.cornerRadius = 6
+            qrContainer.translatesAutoresizingMaskIntoConstraints = false
+            content.addSubview(qrContainer)
+
+            let qrTitle = NSTextField(labelWithString: "二维码内容")
+            qrTitle.font = .systemFont(ofSize: 11, weight: .semibold)
+            qrTitle.textColor = .secondaryLabelColor
+            qrTitle.translatesAutoresizingMaskIntoConstraints = false
+            qrContainer.addSubview(qrTitle)
+
+            let qrTextView = NSTextView()
+            qrTextView.isEditable = false
+            qrTextView.isSelectable = true
+            qrTextView.font = .systemFont(ofSize: 13)
+            qrTextView.string = qrCodes.joined(separator: "\n")
+            let qrScroll = NSScrollView()
+            qrScroll.translatesAutoresizingMaskIntoConstraints = false
+            qrScroll.hasVerticalScroller = true
+            qrScroll.borderType = .noBorder
+            qrScroll.documentView = qrTextView
+            qrContainer.addSubview(qrScroll)
+
+            let qrCopyBtn = NSButton(title: "复制", target: self, action: #selector(copyQRText(_:)))
+            qrCopyBtn.translatesAutoresizingMaskIntoConstraints = false
+            qrCopyBtn.bezelStyle = .rounded
+            qrContainer.addSubview(qrCopyBtn)
+
+            NSLayoutConstraint.activate([
+                qrContainer.topAnchor.constraint(equalTo: content.topAnchor, constant: 12),
+                qrContainer.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 12),
+                qrContainer.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -12),
+                qrContainer.heightAnchor.constraint(equalToConstant: 96),
+                qrTitle.topAnchor.constraint(equalTo: qrContainer.topAnchor, constant: 6),
+                qrTitle.leadingAnchor.constraint(equalTo: qrContainer.leadingAnchor, constant: 8),
+                qrCopyBtn.centerYAnchor.constraint(equalTo: qrTitle.centerYAnchor),
+                qrCopyBtn.trailingAnchor.constraint(equalTo: qrContainer.trailingAnchor, constant: -8),
+                qrScroll.topAnchor.constraint(equalTo: qrTitle.bottomAnchor, constant: 4),
+                qrScroll.leadingAnchor.constraint(equalTo: qrContainer.leadingAnchor, constant: 8),
+                qrScroll.trailingAnchor.constraint(equalTo: qrContainer.trailingAnchor, constant: -8),
+                qrScroll.bottomAnchor.constraint(equalTo: qrContainer.bottomAnchor, constant: -6),
+            ])
+            ocrQRTextView = qrTextView
+            qrBottomAnchor = qrContainer.bottomAnchor
+        } else {
+            ocrQRTextView = nil
+        }
 
         let scrollView = NSScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -621,7 +771,7 @@ extension ScreenshotCoordinator: ScreenshotToolbarDelegate {
         content.addSubview(copyBtn)
 
         NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: content.topAnchor, constant: 12),
+            scrollView.topAnchor.constraint(equalTo: qrBottomAnchor, constant: 12),
             scrollView.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 12),
             scrollView.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -12),
             scrollView.bottomAnchor.constraint(equalTo: copyBtn.topAnchor, constant: -12),
@@ -633,6 +783,17 @@ extension ScreenshotCoordinator: ScreenshotToolbarDelegate {
         NSApp.activate(ignoringOtherApps: true)
         ocrResultPanel = panel
         ocrTextView = textView
+    }
+
+    /// 复制二维码区块内容并关闭面板。
+    @objc private func copyQRText(_ sender: NSButton) {
+        guard let qrTextView = ocrQRTextView else { return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(qrTextView.string, forType: .string)
+        DiagLog.write("OCR QR content copied to pasteboard")
+        ocrResultPanel?.orderOut(nil)
+        ocrResultPanel = nil
     }
 
     @objc private func copyOCRText(_ sender: NSButton) {
@@ -657,6 +818,164 @@ extension ScreenshotCoordinator: ScreenshotToolbarDelegate {
     func toolbarDidSave() { saveToFile(); finish() }
     func toolbarDidPin() { pinToDesktop(); finish() }
     func toolbarDidCancel() { cancel() }
+
+    // MARK: - 延时截图
+
+    /// 延时截图：隐藏覆盖层与工具条 → 全屏透明浮窗大号倒计时（每秒 beep）→
+    /// 归零移除浮窗、抓「选区所在屏」新鲜帧替换预捕获底图 → 恢复编辑态（选区/标注/工具全保留）。
+    /// 期间 ESC 经既有会话监听触发 cancel() → finish() 统一清理倒计时。
+    func toolbarDidRequestDelay(seconds: Int) {
+        guard let overlay = activeOverlay, selectionRect != nil, delayCountdown == nil else { return }
+        let screen = overlay.screen ?? NSScreen.main!
+        // 隐藏全部截图 UI（悬停提示一并收起）
+        toolbar?.hideTooltips()
+        toolbar?.closeAllPanels()
+        toolbar?.orderOut(nil)
+        for w in overlayWindows { w.orderOut(nil) }
+
+        // 倒计时浮窗（选区所在屏，数字优先取选区中央）
+        let win = ScreenshotCountdownWindow(screen: screen, focusRect: selectionRect)
+        win.showCountdown(seconds: seconds)
+        countdownWindow = win
+
+        // 倒计时状态机（调度注入主队列，可单测的纯逻辑在 DelayCaptureCountdown）
+        let countdown = DelayCaptureCountdown(
+            seconds: seconds,
+            schedule: { [weak self] delay, fire in
+                guard let self = self else { return }
+                let item = DispatchWorkItem(block: fire)
+                self.delayCaptureWorkItem = item
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+            },
+            cancelScheduled: { [weak self] in
+                self?.delayCaptureWorkItem?.cancel()
+                self?.delayCaptureWorkItem = nil
+            })
+        countdown.onTick = { [weak win] remaining in
+            NSSound.beep()
+            win?.update(number: remaining)
+        }
+        countdown.onFinish = { [weak self] in self?.handleDelayCaptureFinished() }
+        countdown.start()
+        delayCountdown = countdown
+        DiagLog.write("Delay capture started: \(seconds)s")
+    }
+
+    /// 倒计时结束：移除浮窗 → 抓选区所在屏新鲜帧（不是会话开始时的预捕获旧图）→
+    /// 恢复覆盖层与工具条进入编辑模式。
+    private func handleDelayCaptureFinished() {
+        delayCountdown = nil
+        countdownWindow?.orderOut(nil)
+        countdownWindow = nil
+        guard let overlay = activeOverlay, let sel = selectionRect else {
+            finish()
+            return
+        }
+        // 先移除浮窗再抓帧，保证倒计时数字不被截进画面
+        let screen = overlay.screen ?? NSScreen.main!
+        let displayID = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID)
+            ?? CGMainDisplayID()
+        if let fresh = freshFrames.capture(displayID) {
+            overlay.overlayView!.capturedImage = fresh
+        } else {
+            DiagLog.write("Delay capture: fresh frame capture failed, keep pre-captured frame")
+        }
+        overlay.orderFrontRegardless()
+        overlay.overlayView!.isEditMode = true
+        overlay.overlayView!.needsDisplay = true
+        // 恢复编辑态工具条（与选区完成共用构建；不重置 currentTool/标注，延时前画的序号继续递增）
+        buildToolbar(for: overlay, rect: sel)
+        DiagLog.write("Delay capture finished: fresh frame applied, edit mode restored")
+    }
+
+    // MARK: - 轻量 Toast（自定义文案）
+
+    /// 毛玻璃轻 Toast：静默 OCR「已复制 N 字」等自定义文案场景（固定文案用 feedback）。
+    private func showToast(_ text: String) {
+        toastHideWorkItem?.cancel()
+        toastPanel?.orderOut(nil)
+        toastGeneration += 1
+        let generation = toastGeneration
+
+        let font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        let textWidth = ceil((text as NSString).size(withAttributes: [.font: font]).width)
+        let panelWidth = min(460, 14 + 18 + 7 + textWidth + 14)
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: 44),
+                            styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 3)
+        panel.collectionBehavior = [.canJoinAllSpaces, .ignoresCycle]
+        panel.hidesOnDeactivate = false
+
+        let visual = NSVisualEffectView()
+        visual.material = .hudWindow
+        visual.blendingMode = .behindWindow
+        visual.state = .active
+        visual.wantsLayer = true
+        visual.layer?.cornerRadius = 14
+        visual.layer?.masksToBounds = true
+        visual.translatesAutoresizingMaskIntoConstraints = false
+        panel.contentView = visual
+
+        let icon = NSImageView(image: NSImage(systemSymbolName: "checkmark.circle.fill",
+                                              accessibilityDescription: text) ?? NSImage())
+        icon.contentTintColor = .controlAccentColor
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        visual.addSubview(icon)
+
+        let label = NSTextField(labelWithString: text)
+        label.font = font
+        label.textColor = .labelColor
+        label.lineBreakMode = .byTruncatingMiddle
+        label.translatesAutoresizingMaskIntoConstraints = false
+        visual.addSubview(label)
+
+        NSLayoutConstraint.activate([
+            icon.leadingAnchor.constraint(equalTo: visual.leadingAnchor, constant: 14),
+            icon.centerYAnchor.constraint(equalTo: visual.centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 18),
+            icon.heightAnchor.constraint(equalToConstant: 18),
+            label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 7),
+            label.centerYAnchor.constraint(equalTo: visual.centerYAnchor),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: visual.trailingAnchor, constant: -14),
+        ])
+
+        // 主屏菜单栏下方居中（对齐 ScreenshotFeedbackPresenter）
+        if let screen = NSScreen.main {
+            let visible = screen.visibleFrame
+            panel.setFrameOrigin(NSPoint(
+                x: visible.midX - panelWidth / 2,
+                y: visible.maxY - panel.frame.height - 8))
+        }
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.18
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().alphaValue = 1
+        }
+        toastPanel = panel
+
+        let item = DispatchWorkItem { [weak self] in
+            guard let self = self, self.toastGeneration == generation else { return }
+            self.toastPanel?.orderOut(nil)
+            self.toastPanel = nil
+        }
+        toastHideWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18 + 1.6, execute: item)
+    }
+
+    /// 关闭自定义 Toast（会话结束时调用，防止残留）。
+    private func dismissToast() {
+        toastHideWorkItem?.cancel()
+        toastHideWorkItem = nil
+        toastPanel?.orderOut(nil)
+        toastPanel = nil
+        toastGeneration += 1
+    }
 
     // MARK: - 长截图入口（v2）
 

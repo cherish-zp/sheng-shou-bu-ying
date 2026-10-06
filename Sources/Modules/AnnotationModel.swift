@@ -1,13 +1,14 @@
 import CoreGraphics
 import Foundation
 
-/// 标注类型：矩形、箭头、文字、马赛克、画笔。
+/// 标注类型：矩形、箭头、文字、马赛克、画笔、序号。
 public enum AnnotationType: String, Codable, CaseIterable {
     case rectangle
     case arrow
     case text
     case mosaic
     case pen
+    case counter
 }
 
 /// 标注颜色：预设调色板 + 自定义 RGB 颜色。
@@ -38,6 +39,7 @@ public enum AnnotationColor: Codable, Equatable, Hashable {
 /// - 文字：points[0]=左上角定位点，text 存内容
 /// - 马赛克：points[0]=origin, points[1]=对角点
 /// - 画笔：points 为自由绘制路径点序列（多点）
+/// - 序号：points[0]=徽章圆心，text 存序号字符串（"1"、"2"…）
 public struct Annotation: Codable, Equatable, Identifiable {
     public let id: UUID
     public var type: AnnotationType
@@ -66,6 +68,8 @@ public struct Annotation: Codable, Equatable, Identifiable {
 /// 标注集合：管理添加/删除/撤销/清空，支持 Codable 序列化。
 public final class AnnotationModel: Codable {
     public private(set) var annotations: [Annotation] = []
+    /// 下一个序号标注的序号（从 1 起）。重新选中序号工具时由外部调 resetCounter() 复位。
+    public private(set) var counterNext: Int = 1
 
     public init() {}
 
@@ -84,29 +88,60 @@ public final class AnnotationModel: Codable {
     }
 
     /// 撤销最后一个标注，返回被移除的标注（空时返回 nil）。
+    /// 撤销序号标注时序号回退（下一个序号重用被撤销的编号），撤销其他类型不影响序号。
     @discardableResult
     public func undo() -> Annotation? {
-        annotations.popLast()
+        let popped = annotations.popLast()
+        if popped?.type == .counter {
+            counterNext = max(1, counterNext - 1)
+        }
+        return popped
     }
 
     public func clear() {
         annotations.removeAll()
     }
 
+    // MARK: - 序号标注
+
+    /// 重新选中序号工具时复位序号，下一次放置从 1 开始。
+    public func resetCounter() {
+        counterNext = 1
+    }
+
+    /// 创建并追加一个序号标注：实心圆徽章 + 白色序号，圆心为点击点（相对选区原点的局部坐标），
+    /// 颜色跟随当前主题色；序号自动递增。
+    @discardableResult
+    public func addCounter(at point: CGPoint, color: AnnotationColor) -> Annotation {
+        let annotation = Annotation(
+            type: .counter,
+            points: [point],
+            text: String(counterNext),
+            color: color
+        )
+        annotations.append(annotation)
+        counterNext += 1
+        return annotation
+    }
+
     // MARK: - Codable
 
     private enum CodingKeys: String, CodingKey {
         case annotations
+        case counterNext
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         annotations = try container.decode([Annotation].self, forKey: .annotations)
+        // 旧版本数据无该字段时默认从 1 开始
+        counterNext = try container.decodeIfPresent(Int.self, forKey: .counterNext) ?? 1
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(annotations, forKey: .annotations)
+        try container.encode(counterNext, forKey: .counterNext)
     }
 
     /// 选颜色时确定使用的标注工具：未选工具则默认矩形，使「点颜色即可画框」。

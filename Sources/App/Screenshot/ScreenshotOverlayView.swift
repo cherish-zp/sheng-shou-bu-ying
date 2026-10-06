@@ -7,7 +7,8 @@ import QuartzCore
 /// 图片直接 ctx.draw 绘制（CGImage 原点左下，标准上下文下正立）。
 final class ScreenshotOverlayView: NSView {
 
-    let capturedImage: CGImage
+    /// 捕获的全屏画面（var：延时截图结束时替换为新鲜帧，其余流程保持不变）。
+    var capturedImage: CGImage
 
     var selectionStart: CGPoint?
     var selectionRect: CGRect?
@@ -242,8 +243,29 @@ final class ScreenshotOverlayView: NSView {
                 ctx.addLine(to: annotation.points[i])
             }
             ctx.strokePath()
+        case .counter:
+            guard !annotation.points.isEmpty else { break }
+            drawCounterBadge(annotation, color: color, in: ctx)
         }
         ctx.restoreGState()
+    }
+
+    /// 绘制序号徽章：主题色实心圆 + 白色序号，圆心为点击点。
+    private func drawCounterBadge(_ annotation: Annotation, color: NSColor, in ctx: CGContext) {
+        let number = annotation.text ?? "1"
+        let badgeRect = CounterBadge.rect(centeredAt: annotation.points[0])
+        ctx.setFillColor(color.cgColor)
+        ctx.fillEllipse(in: badgeRect)
+        // 白色序号在圆内居中（文本走 NSGraphicsContext 绘制，与文字标注同一管线）
+        let font = NSFont.systemFont(ofSize: CounterBadge.fontSize(forDigits: number.count), weight: .bold)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor.white
+        ]
+        let str = NSAttributedString(string: number, attributes: attrs)
+        let size = str.size()
+        str.draw(at: NSPoint(x: badgeRect.midX - size.width / 2,
+                             y: badgeRect.midY - size.height / 2 + 1))
     }
 
     private func drawArrowHead(from start: CGPoint, to end: CGPoint, color: NSColor, in ctx: CGContext) {
@@ -548,6 +570,11 @@ final class ScreenshotOverlayView: NSView {
         let local = CGPoint(x: point.x - sel.origin.x, y: point.y - sel.origin.y)
         if tool == .text {
             startTextEditing(at: point, localPoint: local)
+        } else if tool == .counter {
+            // 序号标注：单击放置（自动递增），无拖拽语义
+            annotations.addCounter(at: local, color: currentColor)
+            onAnnotationsChanged?()
+            needsDisplay = true
         } else if tool == .pen {
             drawingAnnotation = Annotation(type: .pen, points: [local], color: currentColor, strokeWidth: strokeWidth)
         } else {

@@ -17,7 +17,7 @@ final class SettingsWindowLayoutTests: XCTestCase {
         guard let split = window.contentView?.subviews.compactMap({ $0 as? NSSplitView }).first else {
             fatalError("设置窗口内应存在 NSSplitView")
         }
-        XCTAssertEqual(split.arrangedSubviews.count, 4, "应有「分类栏 + 通用 + 片段 + 贴图」四个子视图")
+        XCTAssertEqual(split.arrangedSubviews.count, 5, "应有「分类栏 + 通用 + 片段 + 贴图 + 录屏」五个子视图")
         return split
     }
 
