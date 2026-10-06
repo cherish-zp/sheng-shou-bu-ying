@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import QuartzCore
 
 /// 截图覆盖层视图：显示捕获的画面 + 半透明遮罩 + 选区框 + 标注绘制。
 /// 标准坐标系（isFlipped=false，原点左下），鼠标坐标与 CGContext 一致；
@@ -41,6 +42,27 @@ final class ScreenshotOverlayView: NSView {
     var onCancel: (() -> Void)?
     var onAnnotationsChanged: (() -> Void)?
 
+    // MARK: 悬停高亮窗口与重选（单击点选窗口 / 框外重新框选）
+
+    /// mouseDown 前的选区快照：误单击（未命中窗口）时恢复原选区，绝不产生 10×10 坏选区。
+    private var preDragSelection: CGRect?
+    /// 编辑态点在选区外开启的重选中标志：重选期间走选区阶段的拖拽/单击逻辑。
+    private var isReselecting = false
+    /// 当前悬停高亮的窗口 rect（nil = 无高亮）。
+    private var hoverRect: CGRect?
+    /// 上次悬停窗口检测时间（节流，避免 mouseMoved 高频调用 CGWindowList）。
+    private var lastHoverCheck: TimeInterval = 0
+    /// 悬停窗口检测节流间隔（秒）。
+    private let hoverCheckInterval: TimeInterval = 0.08
+    /// 由 Coordinator 注入：检测鼠标下最顶层窗口 rect（该屏视图坐标），无可检测窗口时返回 nil。
+    var hoverWindowProvider: (() -> CGRect?)?
+    /// 重选开始回调（Coordinator 隐藏工具条）。
+    var onReselectStarted: (() -> Void)?
+    /// 重选取消回调（单击未命中窗口已恢复原选区；Coordinator 恢复工具条显示）。
+    var onReselectCancelled: (() -> Void)?
+    /// 鼠标活动回调（Coordinator 重置空闲超时，选区未完成时才重新调度）。
+    var onMouseActivity: (() -> Void)?
+
     init(capturedImage: CGImage, frame: NSRect) {
         self.capturedImage = capturedImage
         super.init(frame: frame)
@@ -65,6 +87,7 @@ final class ScreenshotOverlayView: NSView {
 
        if let sel = selectionRect, isEditMode {
             drawDarkMask(excluding: sel, radius: cornerRadius, in: ctx)
+            drawHoverHighlight(in: ctx)
             drawSelectionBorder(sel, radius: cornerRadius, in: ctx)
             // 标注点为相对选区原点的局部坐标，平移上下文至选区原点使其落到正确位置
             // 圆角时裁剪标注，防止超出圆角区域
@@ -81,12 +104,25 @@ final class ScreenshotOverlayView: NSView {
             drawResizeHandles(sel, in: ctx)
         } else if let sel = selectionRect {
             drawDarkMask(excluding: sel, radius: cornerRadius, in: ctx)
+            drawHoverHighlight(in: ctx)
             drawSelectionBorder(sel, radius: cornerRadius, in: ctx)
             drawSizeLabel(sel)
         } else {
             ctx.setFillColor(NSColor(white: 0, alpha: 0.35).cgColor)
             ctx.fill(bounds)
+            drawHoverHighlight(in: ctx)
         }
+    }
+
+    /// 绘制悬停窗口高亮：2.5pt systemGreen 描边 + 8% 填充（参考 macOS 原生窗口点选高亮）。
+    /// 仅在 hoverRect 有效且 ≠ 当前选区时绘制；编辑态点在选区内时 hoverRect 已被置空，不会走到。
+    private func drawHoverHighlight(in ctx: CGContext) {
+        guard let hover = hoverRect, hover != selectionRect else { return }
+        ctx.setFillColor(NSColor.systemGreen.withAlphaComponent(0.08).cgColor)
+        ctx.fill(hover)
+        ctx.setStrokeColor(NSColor.systemGreen.cgColor)
+        ctx.setLineWidth(2.5)
+        ctx.stroke(hover)
     }
 
     /// 绘制选区边角的 8 个缩放手柄（4 角 + 4 边中点）。
@@ -260,13 +296,18 @@ final class ScreenshotOverlayView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        // 任何鼠标活动都重置空闲超时（由 Coordinator 决定是否重新调度）
+        onMouseActivity?()
         if isEditMode { handleEditMouseDown(point); return }
-        // 自动选区：点击选区内 -> 待确认；点击选区外 -> 开始新手动选区
+        // 点击瞬间移除悬停高亮，避免与即将开始的新选区混淆
+        setHoverRect(nil)
+        // 自动选区：点击选区内 -> 待确认；点击选区外 -> 开始新手动选区（快照原选区，误单击时恢复）
         if let sel = selectionRect, sel.contains(point) {
             pendingConfirm = true
             return
         }
         pendingConfirm = false
+        preDragSelection = selectionRect
         selectionStart = point
         selectionRect = CGRect(origin: point, size: .zero)
         needsDisplay = true
@@ -275,9 +316,12 @@ final class ScreenshotOverlayView: NSView {
     override func mouseDragged(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         if isEditMode { handleEditMouseDrag(point); return }
+        // 拖拽也算鼠标活动（重置空闲超时）
+        onMouseActivity?()
         // 待确认状态下拖拽 -> 转为手动选区
         if pendingConfirm {
             pendingConfirm = false
+            preDragSelection = nil
             selectionStart = point
             selectionRect = CGRect(origin: point, size: .zero)
         }
@@ -291,12 +335,35 @@ final class ScreenshotOverlayView: NSView {
     override func mouseUp(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         if isEditMode { handleEditMouseUp(point); return }
-        // 自动选区：点击选区内确认
+        // 自动选区：点击选区内确认（既有路径不变）
         if pendingConfirm {
             pendingConfirm = false
             if let sel = selectionRect { onSelectionComplete?(sel) }
             return
         }
+        guard let start = selectionStart else { return }
+        // 单击（非拖拽）：点选窗口，或恢复 mouseDown 前的选区——绝不把 0×0 强制成 10×10 坏选区
+        if SelectionClickResolver.isClick(start: start, end: point) {
+            let windowRect = hoverWindowProvider?()
+            switch SelectionClickResolver.resolve(clickPoint: point, selection: preDragSelection, windowRect: windowRect) {
+            case .confirmSelection:
+                // 理论不达（选区内点击在 mouseDown 已转 pendingConfirm）；兜底恢复快照
+                finishReselectCancelled()
+            case .selectWindow(let rect):
+                DiagLog.write("Click selected window: \(rect)")
+                selectionRect = rect
+                setHoverRect(nil)
+                isReselecting = false
+                selectionStart = nil
+                preDragSelection = nil
+                needsDisplay = true
+                onSelectionComplete?(rect)
+            case .ignore:
+                finishReselectCancelled()
+            }
+            return
+        }
+        // 真拖拽：规范化 + 夹取 + 最小尺寸约束后完成（维持既有行为）
         guard var rect = selectionRect else { return }
         rect = SelectionRect.enforceMinimumSize(rect, minimum: minimumSelection)
         if !SelectionRect.isValid(rect, minimum: minimumSelection) {
@@ -304,20 +371,91 @@ final class ScreenshotOverlayView: NSView {
             return
         }
         selectionRect = rect
+        selectionStart = nil
+        preDragSelection = nil
         needsDisplay = true
         onSelectionComplete?(rect)
     }
 
+    /// 重选取消（含选区阶段误单击兜底）：恢复 mouseDown 前的选区快照；
+    /// 重选中（编辑态框外点击进入）时回到编辑态并通知 Coordinator 恢复工具条。
+    private func finishReselectCancelled() {
+        selectionRect = preDragSelection
+        preDragSelection = nil
+        selectionStart = nil
+        setHoverRect(nil)
+        if isReselecting {
+            isReselecting = false
+            isEditMode = true
+            NSCursor.crosshair.set()
+            onReselectCancelled?()
+        }
+        needsDisplay = true
+        DiagLog.write("Click ignored: restored selection \(String(describing: selectionRect))")
+    }
+
     override func mouseMoved(with event: NSEvent) {
-        guard isEditMode, activeResizeHandle == nil else { return }
         let point = convert(event.locationInWindow, from: nil)
-        if currentTool == nil, let sel = selectionRect {
-            let handle = SelectionRect.hitTest(point: point, in: sel, handleSize: 8)
-            updateCursor(for: handle)
-            transitionCursor(to: .screenshotArea, at: point)
+        // 统一入口：任何鼠标活动都重置空闲超时（由 Coordinator 决定是否重新调度）
+        onMouseActivity?()
+        if isEditMode {
+            guard activeResizeHandle == nil else { return }
+            if currentTool == nil, let sel = selectionRect {
+                let handle = SelectionRect.hitTest(point: point, in: sel, handleSize: 8)
+                updateCursor(for: handle)
+                transitionCursor(to: .screenshotArea, at: point)
+            } else {
+                NSCursor.crosshair.set()
+                transitionCursor(to: .screenshotArea, at: point)
+            }
+            updateHoverHighlight(at: point)
         } else {
+            // 选区阶段（初始选区/重选中）：光标固定十字，允许悬停高亮窗口
             NSCursor.crosshair.set()
             transitionCursor(to: .screenshotArea, at: point)
+            updateHoverHighlight(at: point)
+        }
+    }
+
+    // MARK: 悬停高亮
+
+    /// 悬停高亮是否可用：无拖拽进行中、无标注工具、非待确认，
+    /// 且（选区阶段 || 编辑态光标模式且点在选区及其手柄热区之外）。
+    private func hoverActive(at point: CGPoint) -> Bool {
+        guard hoverWindowProvider != nil else { return false }
+        guard activeResizeHandle == nil, drawingAnnotation == nil, !pendingConfirm else { return false }
+        if isEditMode {
+            guard currentTool == nil, let sel = selectionRect else { return false }
+            // 点在选区或手柄热区上时不高亮（用户在操作自家选区）
+            return SelectionRect.hitTest(point: point, in: sel, handleSize: 8) == nil
+        }
+        return true
+    }
+
+    /// 按节流间隔检测鼠标下窗口并更新悬停高亮；条件不满足时立即清除。
+    private func updateHoverHighlight(at point: CGPoint) {
+        guard hoverActive(at: point) else {
+            setHoverRect(nil)
+            return
+        }
+        let now = CACurrentMediaTime()
+        guard now - lastHoverCheck >= hoverCheckInterval else { return }
+        lastHoverCheck = now
+        let windowRect = hoverWindowProvider?()
+        // 与当前选区相同的窗口不高亮（画了也看不见）
+        let newHover: CGRect? = (windowRect != nil && windowRect != selectionRect) ? windowRect : nil
+        setHoverRect(newHover)
+    }
+
+    /// 更新悬停高亮 rect，按新旧 rect 并集局部失效重绘（避免残影）。
+    private func setHoverRect(_ rect: CGRect?) {
+        guard rect != hoverRect else { return }
+        if let old = hoverRect {
+            setNeedsDisplay(old.insetBy(dx: -3, dy: -3))
+        }
+        hoverRect = rect
+        if let new = rect {
+            setNeedsDisplay(new.insetBy(dx: -3, dy: -3))
         }
     }
 
@@ -339,6 +477,8 @@ final class ScreenshotOverlayView: NSView {
     override func mouseExited(with event: NSEvent) {
         // 拖拽中不切换光标（避免缩放/移动时光标闪变）
         guard activeResizeHandle == nil, drawingAnnotation == nil else { return }
+        // 鼠标离开覆盖层（如移到工具条/其他屏）时清除悬停高亮
+        setHoverRect(nil)
         let point = convert(event.locationInWindow, from: nil)
         transitionCursor(to: .toolbarArea, at: point)
         NSCursor.arrow.set()
@@ -400,6 +540,9 @@ final class ScreenshotOverlayView: NSView {
                 }
                 return
             }
+            // 点在选区外（未命中手柄）：开启重选——转入选区阶段，重新框选或点选窗口
+            beginReselecting(at: point)
+            return
         }
         guard let tool = currentTool, let sel = selectionRect else { return }
         let local = CGPoint(x: point.x - sel.origin.x, y: point.y - sel.origin.y)
@@ -456,6 +599,23 @@ final class ScreenshotOverlayView: NSView {
         drawingAnnotation = nil
         onAnnotationsChanged?()
         needsDisplay = true
+    }
+
+    /// 开始重选：退出编辑态转入选区阶段（复用选区阶段的拖拽/单击逻辑），
+    /// 快照当前选区以便误单击取消时恢复；此后 mouseUp 的单击/拖拽分流按选区阶段处理。
+    /// 注意：重选中 isEditMode 已为 false，handleEditMouseDrag/handleEditMouseUp 天然不再进入。
+    private func beginReselecting(at point: CGPoint) {
+        isReselecting = true
+        preDragSelection = selectionRect
+        isEditMode = false
+        pendingConfirm = false
+        selectionStart = point
+        selectionRect = CGRect(origin: point, size: .zero)
+        setHoverRect(nil)
+        NSCursor.crosshair.set()
+        needsDisplay = true
+        onReselectStarted?()
+        DiagLog.write("Reselect started: preDrag=\(String(describing: preDragSelection))")
     }
 
     // MARK: 文字标注编辑

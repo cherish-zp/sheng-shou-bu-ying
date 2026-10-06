@@ -185,8 +185,9 @@ final class ScreenshotToolbar: NSWindow {
         container.addSubview(sep2)
         x += 8
 
-        // 操作按钮
-        x = addIconButton(container, x: x, y: y, symbol: "arrow.down.to.line", tooltip: "长截图", action: #selector(scrollTapped), bgColor: .systemPurple)
+        // 操作按钮（长截图图标用上下双向箭头，避免与「下载」的 arrow.down 混淆；
+        // 注意 SF Symbol 正确名称为 arrow.up.arrow.down，arrow.up.and.down 在 macOS 上不存在）
+        x = addIconButton(container, x: x, y: y, symbol: "arrow.up.arrow.down", tooltip: "长截图（滚动拼接）", action: #selector(scrollTapped), bgColor: .systemPurple)
         x = addIconButton(container, x: x + 4, y: y, symbol: "arrow.down", tooltip: "下载", action: #selector(saveTapped), bgColor: .systemGreen)
         x = addIconButton(container, x: x + 4, y: y, symbol: "pin", tooltip: "贴图", action: #selector(pinTapped), bgColor: .systemOrange)
         x = addIconButton(container, x: x + 4, y: y, symbol: "xmark", tooltip: "关闭", action: #selector(cancelTapped), bgColor: .systemRed)
