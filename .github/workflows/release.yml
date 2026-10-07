@@ -43,9 +43,28 @@ jobs:
 
       - name: Run tests
         run: |
-          xcodebuild test -scheme mac_tool_proTests -destination 'platform=macOS' \
-            -derivedDataPath build/DerivedData \
-            CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO
+          set -o pipefail
+          if ! xcodebuild test -scheme mac_tool_proTests -destination 'platform=macOS' \
+               -derivedDataPath build/DerivedData \
+               CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO \
+               > "$RUNNER_TEMP/xcodebuild-test.log" 2>&1; then
+            echo "::error::xcodebuild test 失败：完整日志见 artifact「test-logs」，关键行如下"
+            grep -nE "error:|Failing tests|failed \(" "$RUNNER_TEMP/xcodebuild-test.log" | tail -25 | while IFS= read -r line; do
+              echo "::error::${line:0:240}"
+            done
+            tail -20 "$RUNNER_TEMP/xcodebuild-test.log" | while IFS= read -r line; do
+              echo "::error::${line:0:240}"
+            done
+            exit 1
+          fi
+
+      - name: Upload test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: ${{ runner.temp }}/xcodebuild-test.log
+          if-no-files-found: ignore
 
       - name: Build & package DMG (ad-hoc signing)
         run: SIGN_MODE=ci ./package.sh
