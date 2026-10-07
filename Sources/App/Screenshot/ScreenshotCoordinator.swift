@@ -112,8 +112,8 @@ final class ScreenshotCoordinator {
         DiagLog.write("Captured \(displays.count) display(s), screenRecordingPreflight=\(CGPreflightScreenCaptureAccess())")
         guard !displays.isEmpty else { finish(); return }
 
-        // 不切换 activationPolicy：accessory App 切到 .regular 会导致系统切换 Space，
-        // 在其他 App 全屏时覆盖层无法显示。保持 .accessory + activate 即可在当前 Space 显示。
+        // 不切换 activationPolicy（App 固定 .regular，Dock 常驻）：覆盖层窗口自带
+        // canJoinAllSpaces + fullScreenAuxiliary，在其他 App 全屏时也能于当前 Space 显示。
         NSApp.activate(ignoringOtherApps: true)
 
         // 4. 为每个屏幕创建覆盖层窗口

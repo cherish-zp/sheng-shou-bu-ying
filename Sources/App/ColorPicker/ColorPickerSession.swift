@@ -65,7 +65,8 @@ final class ColorPickerSession: NSObject {
             keyWindow.makeKeyAndOrderFront(nil)
             keyWindow.makeFirstResponder(keyWindow.pickerView)
         }
-        // 不切换 activationPolicy（与截图流程一致）：保持 .accessory + activate
+        // 不切换 activationPolicy（与截图流程一致）：App 固定 .regular，放大镜/覆盖层
+        // 窗口自带 canJoinAllSpaces + fullScreenAuxiliary
         NSApp.activate(ignoringOtherApps: true)
 
         // 放大镜窗口 + ESC 本地监听兜底（覆盖层为 key 时视图 keyDown 已处理，此为第二道）
