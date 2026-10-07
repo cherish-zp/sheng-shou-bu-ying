@@ -20,7 +20,7 @@ final class ScreenshotConfigTests: XCTestCase {
 
     func test_fileNameBuilder_defaultFormat() {
         let date = makeDate(year: 2026, month: 8, day: 1, hour: 14, minute: 44, second: 33)
-        let name = ScreenshotFileNameBuilder.baseName(date: date, prefix: "截屏")
+        let name = ScreenshotFileNameBuilder.baseName(date: date, prefix: "截屏", timeZone: Self.tz)
         XCTAssertEqual(name, "截屏 2026-08-01 14.44.33")
     }
 
@@ -28,18 +28,21 @@ final class ScreenshotConfigTests: XCTestCase {
         let config = ScreenshotConfig(saveDirectory: URL(fileURLWithPath: "/tmp"))
         let date = makeDate(year: 2026, month: 8, day: 1, hour: 14, minute: 44, second: 33)
         let existing: Set<String> = ["截屏 2026-08-01 14.44.33.png"]
-        let name = ScreenshotFileNameBuilder.uniqueFileName(date: date, config: config, existingNames: existing)
+        let name = ScreenshotFileNameBuilder.uniqueFileName(date: date, config: config, existingNames: existing, timeZone: Self.tz)
         XCTAssertEqual(name, "截屏 2026-08-01 14.44.33 2.png")
     }
 
     func test_uniqueFileName_noConflict() {
         let config = ScreenshotConfig(saveDirectory: URL(fileURLWithPath: "/tmp"))
         let date = makeDate(year: 2026, month: 8, day: 1, hour: 14, minute: 44, second: 33)
-        let name = ScreenshotFileNameBuilder.uniqueFileName(date: date, config: config, existingNames: [])
+        let name = ScreenshotFileNameBuilder.uniqueFileName(date: date, config: config, existingNames: [], timeZone: Self.tz)
         XCTAssertEqual(name, "截屏 2026-08-01 14.44.33.png")
     }
 
     // MARK: - Helpers
+
+    /// 与 makeDate 的构造时区一致，断言在任意宿主时区（含 CI 的 UTC）下确定。
+    private static let tz = TimeZone(identifier: "Asia/Shanghai")!
 
     private func makeDate(year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int) -> Date {
         var comps = DateComponents()

@@ -35,10 +35,16 @@ public struct ScreenshotConfig: Codable, Equatable {
 /// 根据日期与配置生成截图文件名，复用 FileNameResolver 做去重。
 public enum ScreenshotFileNameBuilder {
     /// 基础文件名（不含扩展名），格式与 macOS 系统截图一致："截屏 2026-08-01 14.44.33"。
-    public static func baseName(date: Date, prefix: String = "截屏") -> String {
+    /// timeZone 默认本地时区（文件名呈现用户本地时间），测试显式注入固定时区。
+    public static func baseName(
+        date: Date,
+        prefix: String = "截屏",
+        timeZone: TimeZone = .current
+    ) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
         formatter.locale = Locale(identifier: "zh_CN")
+        formatter.timeZone = timeZone
         return "\(prefix) \(formatter.string(from: date))"
     }
 
@@ -46,9 +52,10 @@ public enum ScreenshotFileNameBuilder {
     public static func uniqueFileName(
         date: Date,
         config: ScreenshotConfig,
-        existingNames: Set<String>
+        existingNames: Set<String>,
+        timeZone: TimeZone = .current
     ) -> String {
-        let base = baseName(date: date, prefix: config.filenamePrefix)
+        let base = baseName(date: date, prefix: config.filenamePrefix, timeZone: timeZone)
         let fullName = "\(base).\(config.format.fileExtension)"
         return FileNameResolver.unique(baseName: fullName, existingNames: existingNames)
     }
