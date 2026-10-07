@@ -34,7 +34,8 @@ xcodebuild -project mac_tool_pro.xcodeproj -scheme mac_tool_pro \
 
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist")
 DMG_DIR="dist"
-DMG="${DMG_DIR}/${APP_NAME}-${VERSION}.dmg"
+# DMG 文件名用 ASCII：GitHub Release 上传会剥除非 ASCII 附件名（圣手捕影-1.0.0.dmg → -1.0.0.dmg）
+DMG="${DMG_DIR}/ShengShouBuYing-${VERSION}.dmg"
 
 echo "▸ Verifying code signature..."
 codesign --verify --verbose=4 "$APP" >/dev/null 2>&1 || { echo "✗ Signature verification failed"; exit 1; }

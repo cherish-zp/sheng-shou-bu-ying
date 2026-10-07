@@ -65,9 +65,13 @@ Xcode 工具链需 `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Develo
 ## 发布
 
 - 打 `v*` tag 触发 `.github/workflows/release.yml`：版本校验（tag 名 == `Resources/App-Info.plist` 的 `CFBundleShortVersionString`）→ 全量测试 → `SIGN_MODE=ci ./package.sh`（ad-hoc 签名）→ 创建正式 GitHub Release → 同步 Gitee Release（secret `GITEE_TOKEN`，未配置跳过、失败不阻塞）。
+- **切勿删除已推送的 tag 重打**：删除 tag 会使已发布的 Release 退回草稿（Draft），对匿名用户 404；确需重打时，发布后到 Release 页面检查并重新 Publish。
+- GitHub Release 附件名会剥除非 ASCII 字符，DMG 统一 ASCII 名 `ShengShouBuYing-<版本>.dmg`（`package.sh` 已固化）。
+- Gitee 同步在 CI 上不可靠（Gitee WAF 对海外 runner 返回 HTTP 200 的 HTML 验证页，假 200 污染 API 判定）；CI 仅 best-effort，失败用本地兜底：`GITEE_TOKEN=<token> ./scripts/sync-gitee-release.sh v<版本>`（幂等，脚本用 `jq -e` 校验响应为 JSON 防假 200）。
 - CI 产物未公证：README 与 Release 说明均注明「首次打开右键 → 打开」；升级 Developer ID + 公证需付费 Apple Developer 账号，届时在 workflow 中配置 `APPLE_*` secrets。
 - `package.sh` 默认本地自动签名（团队 `77SQ3JU8MG`）；`SIGN_MODE=ci` 切换 ad-hoc 仅供 CI 使用，勿用 ci 模式出本地正式安装包。
 - 手动验证 CI：GitHub Actions 页面对 `main` 触发 `release` workflow，只上传 artifacts 不发版。
+- 本地/CI 测试时区差异：文件名类断言必须显式注入时区（`TZ=UTC` 本地跑全量可复现 CI 环境），勿依赖宿主时区（详见 `fix: 文件名构建器时区注入` 提交）。
 
 ## 提交规范
 

@@ -103,7 +103,7 @@ open mac_tool_pro.xcodeproj
 - GitHub:<https://github.com/cherish-zp/sheng-shou-bu-ying/releases>
 - Gitee:<https://gitee.com/princess-zp/sheng-shou-bu-ying/releases>
 
-1. 下载 `圣手捕影-<版本>.dmg`,双击挂载后拖入「应用程序」。
+1. 下载 `ShengShouBuYing-<版本>.dmg`，双击挂载后拖入「应用程序」。
 2. 首次打开:在「应用程序」中**右键 → 打开**(CI 构建未做 Apple 公证,直接双击会被
    Gatekeeper 拦截;右键打开一次后即可正常使用)。
 3. Finder 右键菜单:「系统设置 → 登录项与扩展 → Finder 扩展」勾选圣手捕影。
