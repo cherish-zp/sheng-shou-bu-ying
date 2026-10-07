@@ -519,7 +519,7 @@ final class RecordingSettingsPaneView: NSView {
             let alert = NSAlert()
             alert.alertStyle = .warning
             alert.messageText = "无法启用麦克风"
-            alert.informativeText = "麦克风权限已被拒绝，请在「系统设置 → 隐私与安全性 → 麦克风」中允许 mac_tool_pro。"
+            alert.informativeText = "麦克风权限已被拒绝，请在「系统设置 → 隐私与安全性 → 麦克风」中允许圣手捕影。"
             alert.addButton(withTitle: "好")
             alert.runModal()
         }

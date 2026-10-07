@@ -10,8 +10,7 @@ final class SnippetManager {
     private let storageURL: URL
 
     private init() {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("mac_tool_pro", isDirectory: true)
+        let dir = AppSupportDirectory.url
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         storageURL = dir.appendingPathComponent("snippets.json")
         load()

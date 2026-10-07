@@ -1,4 +1,4 @@
-# mac_tool_pro
+# 圣手捕影（ShengShouBuYing）
 
 一个面向 Mac(Apple Silicon)的可扩展小工具集合。通过 **Finder 右键菜单** 和 **菜单栏**
 提供各类小工具,工具以统一 `Tool` 协议接入,便于持续新增。
@@ -24,7 +24,7 @@
 ./build.sh
 ```
 
-产物:`build/mac_tool_pro.app`(已内嵌 Finder 扩展并完成 ad-hoc 签名)。
+产物:`build/圣手捕影.app`(已内嵌 Finder 扩展并完成 ad-hoc 签名)。
 
 > 关于 SDK:`build.sh` 默认使用 `MacOSX15.4.sdk`。本机的默认 `MacOSX.sdk`(26.5)与
 > 命令行工具自带的 swiftc 版本不匹配会报错,故显式指定 15.4。若你的环境没有该 SDK,用环境
@@ -32,8 +32,8 @@
 
 ## 启用 Finder 扩展
 
-1. 双击运行 `build/mac_tool_pro.app`(首次运行需在「系统设置 > 隐私与安全」允许打开)。
-2. 打开「系统设置 > 隐私与安全性 > 扩展 > 访达扩展」,勾选 `mac_tool_pro Finder 扩展`。
+1. 双击运行 `build/圣手捕影.app`(首次运行需在「系统设置 > 隐私与安全」允许打开)。
+2. 打开「系统设置 > 隐私与安全性 > 扩展 > 访达扩展」,勾选 `圣手捕影 Finder 扩展`。
 3. 在 Finder 中右键文件/文件夹,即可看到「复制路径」。
 
 > 若右键菜单不出现:Finder Sync 扩展通常需要一个有效的签名身份才能被系统注册。本仓库为

@@ -24,7 +24,7 @@ Xcode 工具链需 `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Develo
   xcodebuild test -scheme mac_tool_proTests -destination 'platform=macOS' \
     -derivedDataPath build/DerivedData CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO
   ```
-- 本地运行：构建后 `open build/DerivedData/Build/Products/Release/mac_tool_pro.app`。
+- 本地运行：构建后 `open "build/DerivedData/Build/Products/Release/圣手捕影.app"`。
 
 ## 代码风格与规范
 
@@ -43,11 +43,11 @@ Xcode 工具链需 `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Develo
 
 ## 安装与构建产物注意事项
 
-- 仅在 `/Applications` 安装一份 `mac_tool_pro.app`；切勿在 `build/` 根目录或其他位置残留可执行 `.app` 副本，否则 Spotlight 会索引出多个同名 app、旧副本排在前面导致打开旧版。
+- 仅在 `/Applications` 安装一份 `圣手捕影.app`；切勿在 `build/` 根目录或其他位置残留可执行 `.app` 副本，否则 Spotlight 会索引出多个同名 app、旧副本排在前面导致打开旧版。
 - `build/` 与 `build/DerivedData/` 已放置 `.metadata_never_index`，阻止 Spotlight 索引构建产物；切勿删除该标记。
-- `package.sh` 每次构建后自动清理 `build/mac_tool_pro.app` 残留副本、刷新 `.metadata_never_index` 并清除 Xcode `DerivedData` 中同名 app。
-- 安装统一用 `package.sh` 或 `ditto <产物> /Applications/mac_tool_pro.app`，禁止手动 ditto 到 `build/` 根目录。
-- 验证只有一个正式版：`mdfind "kMDItemFSName == 'mac_tool_pro.app'"` 应仅返回 `/Applications/mac_tool_pro.app`。
+- `package.sh` 每次构建后自动清理 `build/圣手捕影.app` 残留副本（并清除更名前的旧 `mac_tool_pro.app`）、刷新 `.metadata_never_index` 并清除 Xcode `DerivedData` 中同名 app。
+- 安装统一用 `package.sh` 或 `ditto <产物> "/Applications/圣手捕影.app"`，禁止手动 ditto 到 `build/` 根目录。
+- 验证只有一个正式版：`mdfind "kMDItemFSName == '圣手捕影.app'"` 应仅返回 `/Applications/圣手捕影.app`。
 
 ## 截图模块注意事项
 

@@ -11,9 +11,7 @@ public enum ToolConfig {
     }
 
     public static var directoryURL: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        let dir = base.appendingPathComponent("mac_tool_pro", isDirectory: true)
+        let dir = AppSupportDirectory.url
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }

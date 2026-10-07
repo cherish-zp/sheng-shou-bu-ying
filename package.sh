@@ -1,15 +1,17 @@
 #!/bin/bash
 #
-# Packages mac_tool_pro into an installable DMG (drag-to-Applications).
-# Builds with Xcode automatic signing, then creates dist/mac_tool_pro-<version>.dmg.
+# Packages 圣手捕影 into an installable DMG (drag-to-Applications).
+# Builds with Xcode automatic signing, then creates dist/圣手捕影-<version>.dmg.
 #
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP_NAME="mac_tool_pro"
+APP_NAME="圣手捕影"
 
 # 清理历史残留的可执行副本，避免 Spotlight 索引到与正式安装同名的旧版 app
 rm -rf build/${APP_NAME}.app
+# 更名迁移：清除旧名 mac_tool_pro.app 的正式安装副本与构建残留（一次执行后为空操作）
+rm -rf "/Applications/mac_tool_pro.app" build/mac_tool_pro.app
 DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM:-77SQ3JU8MG}"
 DERIVED="build/DerivedData"
 APP="$DERIVED/Build/Products/Release/${APP_NAME}.app"
@@ -20,7 +22,7 @@ xcodebuild -project mac_tool_pro.xcodeproj -scheme mac_tool_pro \
     -configuration Release -destination 'generic/platform=macOS' \
     -derivedDataPath "$DERIVED" \
     DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" CODE_SIGN_STYLE=Automatic \
-    clean build >/tmp/mac_tool_pro_build.log 2>&1
+    clean build >/tmp/shengshoubuying_build.log 2>&1
 
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist")
 DMG_DIR="dist"
@@ -54,5 +56,7 @@ echo "  Size: $(du -h "$DMG" | cut -f1)"
 
 # 阻止 Spotlight 索引构建产物目录，避免搜索出现多个同名 app
 touch build/.metadata_never_index build/DerivedData/.metadata_never_index 2>/dev/null || true
-# 同步清理 Xcode GUI 默认 DerivedData 中可能残留的同名 app
-find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 5 -name "${APP_NAME}.app" -type d -prune -exec rm -rf {} + 2>/dev/null || true
+# 同步清理 Xcode GUI 默认 DerivedData 中可能残留的同名 app（含更名前的旧名）
+for name in "${APP_NAME}" "mac_tool_pro"; do
+    find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 5 -name "${name}.app" -type d -prune -exec rm -rf {} + 2>/dev/null || true
+done

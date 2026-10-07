@@ -10,7 +10,8 @@ final class TransferShelfDropLayoutTests: XCTestCase {
 
     @MainActor
     func test_renderedItemLiesInsideVisibleScrollArea() {
-        let shelf = TransferShelfView(frame: NSRect(x: 0, y: 0, width: 210, height: TransferShelfLayoutSpec.panelHeight))
+        // 面板高度用「1 个条目 + 头部栏」的规格值：头部栏引入后旧 68pt 放不下 44pt 条目
+        let shelf = TransferShelfShelfView(frame: NSRect(x: 0, y: 0, width: 210, height: TransferShelfLayoutSpec.panelHeight(itemCount: 1)))
         let item = TransferItem(url: URL(fileURLWithPath: "/tmp/transfer-shelf-drop-test.txt"))
         shelf.render(items: [item])
         shelf.layoutSubtreeIfNeeded()
@@ -30,7 +31,7 @@ final class TransferShelfDropLayoutTests: XCTestCase {
 
     @MainActor
     func test_documentViewIsPinnedToScrollContentLayout() {
-        let shelf = TransferShelfView(frame: NSRect(x: 0, y: 0, width: 210, height: TransferShelfLayoutSpec.panelHeight))
+        let shelf = TransferShelfShelfView(frame: NSRect(x: 0, y: 0, width: 210, height: TransferShelfLayoutSpec.panelHeight))
         shelf.layoutSubtreeIfNeeded()
 
         guard let scrollView = TransferShelfDropLayoutTests.findAll(in: shelf, of: NSScrollView.self).first,

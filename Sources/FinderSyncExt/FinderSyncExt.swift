@@ -2,7 +2,7 @@ import FinderSync
 import AppKit
 import os.log
 
-private let logger = Logger(subsystem: "com.zp.mac-tool-pro", category: "FinderSyncExt")
+private let logger = Logger(subsystem: "com.zp.shengshoubuying", category: "FinderSyncExt")
 
 @objc(FinderSyncExt)
 final class FinderSyncExt: FIFinderSync {
@@ -12,6 +12,8 @@ final class FinderSyncExt: FIFinderSync {
 
     override init() {
         super.init()
+        // 支持目录迁移（mac_tool_pro → 圣手捕影），工具开关等持久数据随之搬入新目录
+        AppSupportDirectory.migrateIfNeeded()
         // 监视整个文件系统，使右键菜单在任何位置都可用。
         FIFinderSyncController.default().directoryURLs = [URL(fileURLWithPath: "/")]
         diag("FinderSyncExt init; watching /")
@@ -24,7 +26,7 @@ final class FinderSyncExt: FIFinderSync {
         let urls = FIFinderSyncController.default().selectedItemURLs() ?? []
         invocations.clear()
         diag("menu kind=\(String(describing: menuKind)) paths=\(urls.map(\.path).joined(separator: ", "))")
-        let menu = NSMenu(title: "mac_tool_pro")
+        let menu = NSMenu(title: AppBrand.displayName)
         // 关闭自动禁用：Finder Sync 上下文下 NSMenu 默认 autoenablesItems 会校验不到 target 而禁用菜单项，导致点击不触发 action。
         menu.autoenablesItems = false
         buildMenu(into: menu, urls: urls)
@@ -38,7 +40,7 @@ final class FinderSyncExt: FIFinderSync {
         }
 
         if applicable.isEmpty {
-            let placeholder = menu.addItem(withTitle: "mac_tool_pro", action: nil, keyEquivalent: "")
+            let placeholder = menu.addItem(withTitle: AppBrand.displayName, action: nil, keyEquivalent: "")
             placeholder.isEnabled = false
             return
         }
@@ -48,8 +50,8 @@ final class FinderSyncExt: FIFinderSync {
             return
         }
 
-        let parent = menu.addItem(withTitle: "mac_tool_pro", action: nil, keyEquivalent: "")
-        let submenu = NSMenu(title: "mac_tool_pro")
+        let parent = menu.addItem(withTitle: AppBrand.displayName, action: nil, keyEquivalent: "")
+        let submenu = NSMenu(title: AppBrand.displayName)
         submenu.autoenablesItems = false
         for tool in applicable {
             submenu.addItem(menuItem(for: tool, urls: urls))

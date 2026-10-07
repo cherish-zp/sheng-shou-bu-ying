@@ -5,7 +5,7 @@ import Foundation
 final class SnippetManagerNotificationTests: XCTestCase {
 
     func test_notificationName_exists() {
-        XCTAssertEqual(Notification.Name.snippetsDidChange.rawValue, "mac_tool_pro.snippetsDidChange")
+        XCTAssertEqual(Notification.Name.snippetsDidChange.rawValue, "com.zp.shengshoubuying.snippetsDidChange")
     }
 
     func test_notification_roundTrip() {

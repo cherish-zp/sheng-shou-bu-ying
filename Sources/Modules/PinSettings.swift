@@ -3,7 +3,7 @@ import Foundation
 /// 贴图呼吸灯样式变更通知：设置窗口切换后，已打开的贴图立即生效。
 public extension Notification.Name {
     static let pinIndicatorStyleDidChange =
-        Notification.Name("com.zp.mac-tool-pro.pin-indicator-style-did-change")
+        Notification.Name("com.zp.shengshoubuying.pin-indicator-style-did-change")
 }
 
 /// 贴图呼吸灯样式：顶部横条（默认）或左上角圆点。
@@ -89,9 +89,7 @@ public struct PinSettingsStore {
 
     /// App 默认存储位置。
     public static func defaultStore() -> PinSettingsStore {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        let dir = base.appendingPathComponent("mac_tool_pro", isDirectory: true)
+        let dir = AppSupportDirectory.url
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return PinSettingsStore(fileURL: dir.appendingPathComponent("pin_settings.json"))
     }

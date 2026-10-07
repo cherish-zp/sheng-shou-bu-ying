@@ -38,12 +38,9 @@ final class ScreenRecordingModule: NSObject, AppModule {
     private var sessionGlobalMonitor: Any?
     private var previewEscMonitor: Any?
 
-    /// 录制临时文件：~/Library/Application Support/mac_tool_pro/recording-tmp.mp4
+    /// 录制临时文件：~/Library/Application Support/圣手捕影/recording-tmp.mp4
     private var tempURL: URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        return appSupport.appendingPathComponent("mac_tool_pro", isDirectory: true)
-            .appendingPathComponent("recording-tmp.mp4")
+        AppSupportDirectory.url.appendingPathComponent("recording-tmp.mp4")
     }
 
     private enum Keys {
@@ -77,7 +74,7 @@ final class ScreenRecordingModule: NSObject, AppModule {
             CGRequestScreenCaptureAccess()
             stateMachine.handle(.cancel)
             presentAlert(title: "需要屏幕录制权限",
-                         message: "请在「系统设置 → 隐私与安全性 → 屏幕录制」中允许 mac_tool_pro 后重试。")
+                         message: "请在「系统设置 → 隐私与安全性 → 屏幕录制」中允许圣手捕影 后重试。")
             return
         }
         cleanupSessionUI()

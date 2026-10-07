@@ -5,12 +5,14 @@ import Foundation
 /// 非沙盒的菜单栏 App 轮询该目录并真正建文件。
 /// 队列目录在扩展容器内（扩展可写、App 可读），路径须与扩展内 ToolConfig.directoryURL/requests 一致。
 public enum IPCConfig {
-    public static let extensionBundleID = "com.zp.mac-tool-pro.FinderSyncExt"
+    /// 扩展 bundle ID 必须以主应用 bundle ID 为前缀（嵌入扩展校验要求），
+    /// 更名后随之变更；扩展容器数据不迁移（工具开关默认全开，无用户数据损失）。
+    public static let extensionBundleID = "com.zp.shengshoubuying.FinderSyncExt"
 
     /// 扩展容器的请求队列目录（App 读取用）。
     public static func extensionRequestDirectory() -> URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Containers/\(extensionBundleID)/Data/Library/Application Support/mac_tool_pro/requests", isDirectory: true)
+            .appendingPathComponent("Library/Containers/\(extensionBundleID)/Data/Library/Application Support/\(AppSupportDirectory.currentName)/requests", isDirectory: true)
     }
 }
 

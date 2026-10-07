@@ -1,12 +1,10 @@
 import Foundation
 
-/// 诊断日志工具：写入 ~/Library/Application Support/mac_tool_pro/diag.log。
+/// 诊断日志工具：写入 ~/Library/Application Support/圣手捕影/diag.log。
 /// 非沙盒 App 可写任意位置，便于调试热键/截图等问题。
 enum DiagLog {
     static let logURL: URL = {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        let dir = appSupport.appendingPathComponent("mac_tool_pro", isDirectory: true)
+        let dir = AppSupportDirectory.url
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("diag.log")
     }()

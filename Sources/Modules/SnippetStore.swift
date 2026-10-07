@@ -2,7 +2,7 @@ import Foundation
 
 /// 片段数据变更通知名；SnippetManager 保存后发送，AppDelegate 监听后重建菜单。
 public extension Notification.Name {
-    static let snippetsDidChange = Notification.Name("mac_tool_pro.snippetsDidChange")
+    static let snippetsDidChange = Notification.Name("com.zp.shengshoubuying.snippetsDidChange")
 }
 
 /// 快速片段：保存文本内容，通过 key 快速复制到剪贴板。

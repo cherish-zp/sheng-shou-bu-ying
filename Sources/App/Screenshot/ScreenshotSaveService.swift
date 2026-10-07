@@ -30,7 +30,7 @@ final class ScreenshotSaveService {
     /// 反馈展示器（toast/alert）：由调用方注入以便与所在会话共用实例。
     private let feedback: ScreenshotFeedbackPresenter
     /// 保存队列（串行）：同一时刻只进行一次写盘，避免同名查重竞态。
-    private let queue = DispatchQueue(label: "com.mac-tool-pro.screenshot-save", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "com.zp.shengshoubuying.screenshot-save", qos: .userInitiated)
 
     init(feedback: ScreenshotFeedbackPresenter) {
         self.feedback = feedback

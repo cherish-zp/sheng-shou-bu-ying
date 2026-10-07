@@ -16,24 +16,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: SettingsWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 支持目录迁移（mac_tool_pro → 圣手捕影）必须最先执行，任何数据读取都在其后
+        AppSupportDirectory.migrateIfNeeded()
+
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.image = NSImage(
-            systemSymbolName: "hammer",
-            accessibilityDescription: "mac_tool_pro"
-        )
-        statusItem.button?.image?.isTemplate = true
+        if let statusImage = NSImage(named: "MenuBarIcon") {
+            statusImage.isTemplate = true
+            statusItem.button?.image = statusImage
+        } else { // 资产缺失时兜底系统符号
+            statusItem.button?.image = NSImage(
+                systemSymbolName: "hammer",
+                accessibilityDescription: AppBrand.displayName
+            )
+            statusItem.button?.image?.isTemplate = true
+        }
 
         setupAppModules()
-        
+
         // 调试用：监听分布式通知触发截图（可从命令行触发）
         DistributedNotificationCenter.default().addObserver(
             self, selector: #selector(triggerScreenshot),
-            name: NSNotification.Name("com.zp.mac-tool-pro.trigger-screenshot"), object: nil
+            name: NSNotification.Name("com.zp.shengshoubuying.trigger-screenshot"), object: nil
         )
         // 诊断用：导出 App 捕获与系统 screencapture 参照图，对照定位捕获侧色差
         DistributedNotificationCenter.default().addObserver(
             self, selector: #selector(dumpCaptureReference),
-            name: NSNotification.Name("com.zp.mac-tool-pro.dump-capture"), object: nil
+            name: NSNotification.Name("com.zp.shengshoubuying.dump-capture"), object: nil
         )
         setupMainMenu()
         setupGlobalKeyMonitor()
@@ -60,7 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenuItem = NSMenuItem()
         mainMenu.addItem(appMenuItem)
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "退出 mac_tool_pro",
+        appMenu.addItem(withTitle: "退出 \(AppBrand.displayName)",
                         action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appMenuItem.submenu = appMenu
 
@@ -170,7 +178,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
-        let header = menu.addItem(withTitle: "mac_tool_pro", action: nil, keyEquivalent: "")
+        let header = menu.addItem(withTitle: AppBrand.displayName, action: nil, keyEquivalent: "")
         header.isEnabled = false
 
         // App 模块
@@ -214,7 +222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
         menu.addItem(withTitle: "设置…", action: #selector(showSettings), keyEquivalent: ",")
-        menu.addItem(withTitle: "退出 mac_tool_pro", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: "退出 \(AppBrand.displayName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
     }
 
@@ -290,6 +298,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showSettings() {
         openSettings(category: 0)
+    }
+
+    /// Dock 图标点击 / 系统重开事件：仅激活应用，不弹任何窗口。
+    /// 设置窗口的唯一入口是菜单栏「设置…（⌘,）」。
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        true
     }
 
     @objc private func showSnippetSettings() {

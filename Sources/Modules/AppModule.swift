@@ -7,8 +7,15 @@ public protocol AppModule: AnyObject {
     var title: String { get }
     var defaultHotkey: Hotkey { get }
     func perform()
+    /// 模块启用后启动常驻资源（全局监听等）。默认无操作。
+    func start()
+    /// 模块停用时释放常驻资源。默认无操作。
+    func stop()
 }
 
 public extension AppModule {
     var image: NSImage? { nil }
+
+    func start() {}
+    func stop() {}
 }

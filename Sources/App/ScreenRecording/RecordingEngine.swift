@@ -81,7 +81,7 @@ final class RecordingEngine: NSObject {
     private var finishReported = false
 
     /// 追加串行队列（video/audio/mic 的 append 全部经此排序）。
-    private let writerQueue = DispatchQueue(label: "com.zp.mac-tool-pro.recording.append")
+    private let writerQueue = DispatchQueue(label: "com.zp.shengshoubuying.recording.append")
 
     // MARK: - 生命周期
 
@@ -141,7 +141,7 @@ final class RecordingEngine: NSObject {
 
             let stream = SCStream(filter: filter, configuration: scConfig, delegate: self)
             self.stream = stream
-            let outputQueue = DispatchQueue(label: "com.zp.mac-tool-pro.recording.stream")
+            let outputQueue = DispatchQueue(label: "com.zp.shengshoubuying.recording.stream")
             try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: outputQueue)
             if params.systemAudioEnabled {
                 try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: outputQueue)
