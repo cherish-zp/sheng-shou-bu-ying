@@ -3,32 +3,37 @@
 一个面向 Mac(Apple Silicon)的可扩展小工具集合。通过 **Finder 右键菜单** 和 **菜单栏**
 提供各类小工具,工具以统一 `Tool` 协议接入,便于持续新增。
 
-## 当前工具
+## 主要功能
 
-- **复制路径**:右键文件/文件夹,复制 POSIX 绝对路径到剪贴板;多选时换行分隔。
+- **菜单栏**:截图(区域/延时/序号标注)、贴图(滚轮缩放/呼吸灯)、长截图(滚动拼接)、
+  录屏、取色、OCR、快速片段、中转站(文件/文本暂存拖拽)。
+- **Finder 右键**:复制路径、新建文件等,以统一 `Tool` 协议接入,便于持续新增。
 
 ## 运行效果
 
-- 菜单栏出现一个工具图标,点击可开关各工具。
-- 在 Finder 里右键文件/文件夹,菜单中出现「复制路径」。
+- 菜单栏图标呼出各功能;全局热键 F1 触发截图(可在设置中查看/调整)。
+- 在 Finder 里右键文件/文件夹,菜单中出现本应用的工具子菜单。
 
 ## 环境要求
 
 - macOS 13.0+,Apple Silicon(arm64)
-- Swift 命令行工具(Command Line Tools)。**不需要完整 Xcode**--`build.sh` 直接用 `swiftc`
-  构建。若已安装 xcodegen + 完整 Xcode,也可用 `project.yml` 生成 `.xcodeproj`(见下文)。
+- 主路线:完整 Xcode + xcodegen(`brew install xcodegen`),用于 `package.sh` 正式构建与开发;
+- 快速路线:`build.sh` 仅需 Swift 命令行工具(Command Line Tools)。
 
 ## 构建
 
 ```bash
-./build.sh
+brew install xcodegen
+xcodegen generate          # 依据 project.yml 生成 mac_tool_pro.xcodeproj
+./package.sh               # Release 构建 + 自动签名 + 打包 DMG 到 dist/
 ```
 
-产物:`build/圣手捕影.app`(已内嵌 Finder 扩展并完成 ad-hoc 签名)。
+产物:`dist/圣手捕影-<版本>.dmg`(可拖拽安装);CI 上用 `SIGN_MODE=ci ./package.sh`
+走 ad-hoc 签名(见「发布」)。
 
-> 关于 SDK:`build.sh` 默认使用 `MacOSX15.4.sdk`。本机的默认 `MacOSX.sdk`(26.5)与
-> 命令行工具自带的 swiftc 版本不匹配会报错,故显式指定 15.4。若你的环境没有该 SDK,用环境
-> 变量覆盖:`MAC_TOOL_PRO_SDK=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk ./build.sh`。
+> `./build.sh` 为 swiftc 快速直编路线(产物 `build/圣手捕影.app`,ad-hoc 签名),仅依赖
+> Command Line Tools,适合快速验证;默认使用 `MacOSX15.4.sdk`,可用
+> `MAC_TOOL_PRO_SDK=<SDK路径>` 覆盖。
 
 ## 启用 Finder 扩展
 
@@ -78,8 +83,8 @@ docs/design.md     设计文档
 
 2. 在 `ToolRegistry.init` 中注册:`tools = [CopyPathTool(), CopyFilenameTool()]`。
 
-3. 重新 `./build.sh`。菜单栏开关与 Finder 右键菜单会自动包含新工具(多工具时自动收纳到
-   「mac_tool_pro」子菜单)。
+3. 重新构建。菜单栏开关与 Finder 右键菜单会自动包含新工具(多工具时自动收纳到
+   「圣手捕影」子菜单)。
 
 ## 用 Xcode 打开(可选)
 
@@ -91,10 +96,30 @@ open mac_tool_pro.xcodeproj
 
 生成后可在 Xcode 中设置签名团队、调试扩展。注意:`project.yml` 仅为起点,可能需按实际微调。
 
-## 分发(后续)
+## 下载安装
 
-直接分发路线:Developer ID 签名 + `notarytool` 公证,可配合 Sparkle 做自动更新。详见
-`docs/design.md`。
+正式版从 Release 下载:
+
+- GitHub:<https://github.com/cherish-zp/sheng-shou-bu-ying/releases>
+- Gitee:<https://gitee.com/princess-zp/sheng-shou-bu-ying/releases>
+
+1. 下载 `圣手捕影-<版本>.dmg`,双击挂载后拖入「应用程序」。
+2. 首次打开:在「应用程序」中**右键 → 打开**(CI 构建未做 Apple 公证,直接双击会被
+   Gatekeeper 拦截;右键打开一次后即可正常使用)。
+3. Finder 右键菜单:「系统设置 → 登录项与扩展 → Finder 扩展」勾选圣手捕影。
+
+## 发布
+
+推送 `v*` tag 自动发布,如 `git tag v1.0.0 && git push origin v1.0.0`,CI
+(`.github/workflows/release.yml`)依次执行:
+
+1. 版本校验:tag 名必须与 `Resources/App-Info.plist` 的 `CFBundleShortVersionString` 一致;
+2. 跑全量测试 → ad-hoc 构建 → 打包 DMG → 创建正式 GitHub Release;
+3. 同步附件到 Gitee Release(需仓库 secret `GITEE_TOKEN`,未配置自动跳过,失败不阻塞发布)。
+
+手动验证:在 Actions 页面手动触发 `release` workflow,走同一构建链路但只上传 artifacts、
+不发版。后续升级路线:Developer ID 签名 + `notarytool` 公证(需付费 Apple Developer
+账号),详见 `docs/design.md`。
 
 ## 许可
 

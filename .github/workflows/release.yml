@@ -1,0 +1,148 @@
+name: release
+
+# 发布模型（参考 MasterfulHands/Pier 同款链路）：
+#   push v* tag  → 测试门禁 → ad-hoc 构建 DMG → 正式 GitHub Release → 同步 Gitee Release
+#   手动 dispatch → 同一构建链路，仅上传 artifacts 供验证，不发 Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GITHUB_REPO: cherish-zp/sheng-shou-bu-ying
+  GITEE_REPO: princess-zp/sheng-shou-bu-ying
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install xcodegen & generate project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Verify tag matches Info.plist version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PLIST_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/App-Info.plist)"
+          if [ "$TAG_VERSION" != "$PLIST_VERSION" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} 与 App-Info.plist 版本 ${PLIST_VERSION} 不一致，发布前请同步两处版本号"
+            exit 1
+          fi
+          echo "版本校验通过：${PLIST_VERSION}"
+
+      - name: Run tests
+        run: |
+          xcodebuild test -scheme mac_tool_proTests -destination 'platform=macOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO
+
+      - name: Build & package DMG (ad-hoc signing)
+        run: SIGN_MODE=ci ./package.sh
+
+      - name: Locate DMG
+        id: dmg
+        run: echo "path=$(ls dist/*.dmg | head -1)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifact (manual runs only)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: shengshoubuying-dmg
+          path: dist/*.dmg
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DMG="${{ steps.dmg.outputs.path }}"
+          {
+            echo "## 圣手捕影 ${GITHUB_REF_NAME}"
+            echo
+            echo "### 安装"
+            echo
+            echo "1. 下载下方 \`$(basename "$DMG")\`，双击挂载后拖入「应用程序」；"
+            echo "2. 首次打开：在「应用程序」中**右键 → 打开**（当前构建未做 Apple 公证，"
+            echo "   直接双击会被 Gatekeeper 拦截，右键打开一次后即可正常使用）；"
+            echo "3. Finder 右键菜单：「系统设置 → 登录项与扩展 → Finder 扩展」勾选圣手捕影。"
+          } > release_body.md
+          gh release create "$GITHUB_REF_NAME" "$DMG" \
+            --repo "$GITHUB_REPO" \
+            --title "圣手捕影 ${GITHUB_REF_NAME}" \
+            --notes-file release_body.md
+
+  sync-gitee:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    continue-on-error: true   # Gitee 同步失败不阻塞 GitHub 发布
+    steps:
+      - name: Sync release assets to Gitee
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GITEE_TOKEN}" ]; then
+            echo "::notice::未配置 GITEE_TOKEN，跳过 Gitee 同步"
+            exit 0
+          fi
+          TAG="${GITHUB_REF_NAME}"
+          API="https://gitee.com/api/v5/repos/${GITEE_REPO}"
+
+          # GitHub Release 正文
+          BODY="$(gh release view "$TAG" --repo "$GITHUB_REPO" --json body -q .body)"
+
+          # 幂等获取/创建 Gitee Release
+          HTTP_CODE="$(curl -s -o gitee_release.json -w '%{http_code}' \
+            "${API}/releases/tags/${TAG}?access_token=${GITEE_TOKEN}")" || true
+          if [ "$HTTP_CODE" = "200" ]; then
+            RELEASE_ID="$(jq -r .id gitee_release.json)"
+            echo "复用已存在的 Gitee Release #${RELEASE_ID}"
+          else
+            echo "创建 Gitee Release ${TAG} ..."
+            RELEASE_ID="$(curl -sf -X POST "${API}/releases?access_token=${GITEE_TOKEN}" \
+              -H 'Content-Type: application/json' \
+              -d "$(jq -n --arg tag "$TAG" --arg name "圣手捕影 ${TAG}" --arg body "$BODY" \
+                    '{tag_name:$tag, name:$name, body:$body, target_commitish:"main", prerelease:false}')" \
+              | jq -r .id)"
+            curl -s -o gitee_release.json "${API}/releases/tags/${TAG}?access_token=${GITEE_TOKEN}"
+          fi
+
+          # 下载 GitHub 附件
+          rm -rf assets && mkdir assets
+          gh release download "$TAG" --repo "$GITHUB_REPO" --dir assets
+
+          # 逐个上传：同名跳过，重试 4 次
+          EXISTING="$(jq -r '.assets[].name' gitee_release.json 2>/dev/null || true)"
+          for f in assets/*; do
+            NAME="$(basename "$f")"
+            if echo "$EXISTING" | grep -Fxq "$NAME"; then
+              echo "跳过已存在附件：${NAME}"
+              continue
+            fi
+            OK=0
+            for attempt in 1 2 3 4; do
+              if curl -sf -X POST \
+                   "${API}/releases/${RELEASE_ID}/attach_files?access_token=${GITEE_TOKEN}" \
+                   -F "file=@${f}"; then
+                echo "已上传：${NAME}"; OK=1; break
+              fi
+              echo "上传失败（第 ${attempt} 次）：${NAME}"
+              [ "$attempt" -lt 4 ] && sleep 30
+            done
+            [ "$OK" = 1 ] || { echo "::error::附件最终上传失败：${NAME}"; exit 1; }
+          done
+          echo "Gitee 同步完成：https://gitee.com/${GITEE_REPO}/releases/tag/${TAG}"

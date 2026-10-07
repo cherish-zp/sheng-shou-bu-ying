@@ -16,12 +16,20 @@ DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM:-77SQ3JU8MG}"
 DERIVED="build/DerivedData"
 APP="$DERIVED/Build/Products/Release/${APP_NAME}.app"
 
-echo "▸ Xcode build (automatic signing, team $DEVELOPMENT_TEAM)..."
+# 签名模式：默认本地自动签名（team 证书）；SIGN_MODE=ci 时 ad-hoc（GitHub Actions
+# runner 上无团队证书，产物未公证，用户首次打开需右键 → 打开）
+if [ "${SIGN_MODE:-local}" = "ci" ]; then
+    SIGN_ARGS=(CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual CODE_SIGNING_REQUIRED=NO)
+    echo "▸ Xcode build (CI ad-hoc signing)..."
+else
+    SIGN_ARGS=(DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" CODE_SIGN_STYLE=Automatic)
+    echo "▸ Xcode build (automatic signing, team $DEVELOPMENT_TEAM)..."
+fi
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 xcodebuild -project mac_tool_pro.xcodeproj -scheme mac_tool_pro \
     -configuration Release -destination 'generic/platform=macOS' \
     -derivedDataPath "$DERIVED" \
-    DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" CODE_SIGN_STYLE=Automatic \
+    "${SIGN_ARGS[@]}" \
     clean build >/tmp/shengshoubuying_build.log 2>&1
 
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist")

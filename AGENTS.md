@@ -62,6 +62,13 @@ Xcode 工具链需 `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Develo
 - XCTest，TDD（RED -> GREEN）。每个单元一个测试文件；副作用用 spy/stub 注入。
 - 提交前运行，保持全绿。
 
+## 发布
+
+- 打 `v*` tag 触发 `.github/workflows/release.yml`：版本校验（tag 名 == `Resources/App-Info.plist` 的 `CFBundleShortVersionString`）→ 全量测试 → `SIGN_MODE=ci ./package.sh`（ad-hoc 签名）→ 创建正式 GitHub Release → 同步 Gitee Release（secret `GITEE_TOKEN`，未配置跳过、失败不阻塞）。
+- CI 产物未公证：README 与 Release 说明均注明「首次打开右键 → 打开」；升级 Developer ID + 公证需付费 Apple Developer 账号，届时在 workflow 中配置 `APPLE_*` secrets。
+- `package.sh` 默认本地自动签名（团队 `77SQ3JU8MG`）；`SIGN_MODE=ci` 切换 ad-hoc 仅供 CI 使用，勿用 ci 模式出本地正式安装包。
+- 手动验证 CI：GitHub Actions 页面对 `main` 触发 `release` workflow，只上传 artifacts 不发版。
+
 ## 提交规范
 
 - 规范化前缀（`fix:`、`feat:`）+ 简洁中文摘要；正文说明根因。
