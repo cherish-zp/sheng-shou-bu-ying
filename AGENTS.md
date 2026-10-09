@@ -39,7 +39,8 @@ Xcode 工具链需 `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Develo
 - 扩展必须 `app-sandbox = true`，否则系统不注册。
 - 设 `menu.autoenablesItems = false`，否则菜单项被自动禁用、点击不触发。
 - 不要用 `NSMenuItem.representedObject` 传数据——它跨进程到 Finder 时不保留。改用 `tag` + `ToolInvocationTable`。
-- 诊断：扩展把日志写到容器内 `diag.log`（沙盒下 `os_log` 用 `log show` 抓不到）。
+- 诊断：扩展把日志写到容器内 `diag.log`（沙盒下 `os_log` 用 `log show` 抓不到；终端直接 cat 容器路径会被 TCC 拦，需经 App 内导出）。
+- **更名/换 bundle ID 后扩展身份改变**：启用状态按扩展身份记录、不会迁移，右键菜单会消失。修复：`pluginkit -e use -i <新bundleid>`（或系统设置 → 登录项与扩展 → Finder 扩展勾选），然后 `killall Finder`；验证 `pluginkit -m -p com.apple.FinderSync -v` 输出行首有 `+` 即已启用。
 
 ## 安装与构建产物注意事项
 
