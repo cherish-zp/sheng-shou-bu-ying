@@ -73,6 +73,7 @@ final class ScreenRecordingModule: NSObject, AppModule {
         guard CGPreflightScreenCaptureAccess() else {
             CGRequestScreenCaptureAccess()
             stateMachine.handle(.cancel)
+            NSApp.setActivationPolicy(.regular)
             presentAlert(title: "需要屏幕录制权限",
                          message: "请在「系统设置 → 隐私与安全性 → 屏幕录制」中允许圣手捕影 后重试。")
             return
@@ -84,10 +85,15 @@ final class ScreenRecordingModule: NSObject, AppModule {
         DiagLog.write("ScreenRecording precaptured \(displays.count) display(s)")
         guard !displays.isEmpty else {
             stateMachine.handle(.cancel)
+            NSApp.setActivationPolicy(.regular)
             presentAlert(title: "无法开始录屏", message: "屏幕画面捕获失败，请检查屏幕录制权限。")
             return
         }
-        NSApp.activate(ignoringOtherApps: true)
+        // 会话期临时切 .accessory：.regular 应用的 fullScreenAuxiliary 窗口无法合成到
+        // 其他应用的全屏 Space（macOS 26 实测），录屏选区覆盖层/边框/控制条全屏下会
+        // 不渲染；.accessory 可以。恢复点：showPreview / cancelSession / 失败分支。
+        NSApp.setActivationPolicy(.accessory)
+        DiagLog.write("activationPolicy -> accessory (recording session)")
 
         overlayWindows = displays.compactMap { display -> ScreenshotOverlayWindow? in
             guard let screen = matchingScreen(displayID: display.displayID) else { return nil }
@@ -101,6 +107,7 @@ final class ScreenRecordingModule: NSObject, AppModule {
             window.orderFrontRegardless()
             return window
         }
+        NSApp.activate(ignoringOtherApps: true)
         if let key = overlayWindows.first(where: { $0.screen == NSScreen.main }) ?? overlayWindows.first {
             key.makeKeyAndOrderFront(nil)
             key.makeFirstResponder(key.overlayView)
@@ -280,6 +287,9 @@ final class ScreenRecordingModule: NSObject, AppModule {
         controlBar = nil
         removeSessionKeyMonitors()
         removePreviewEscMonitor()
+        // 录屏 UI 全部收起，恢复 .regular（Dock 常驻图标）
+        NSApp.setActivationPolicy(.regular)
+        DiagLog.write("activationPolicy -> regular (recording session ended)")
         selectedRect = nil
         selectedScreen = nil
         stopwatch.reset()
@@ -299,6 +309,9 @@ final class ScreenRecordingModule: NSObject, AppModule {
     // MARK: - 预览与输出
 
     private func showPreview(url: URL) {
+        // 录屏结束弹预览：恢复正常 .regular（Dock 常驻图标），预览是常规桌面窗口
+        NSApp.setActivationPolicy(.regular)
+        DiagLog.write("activationPolicy -> regular (recording finished, preview)")
         previewURL = url
         let panel = RecordingPreviewPanel(fileURL: url)
         panel.onSave = { [weak self] in self?.saveRecording() }

@@ -52,6 +52,8 @@ Xcode 工具链需 `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Develo
 
 ## 截图模块注意事项
 
+- **全屏 Space 合成规则（macOS 26 实测）**：`.regular` 应用的 `fullScreenAuxiliary` 窗口**无法合成到其他应用的全屏 Space**（窗口存在、可成 key，但内容完全不渲染），`.accessory` 应用的可以。因此截图/取色/录屏三类 UI 会话期间临时 `setActivationPolicy(.accessory)`，会话结束恢复 `.regular`（恢复点：ScreenshotCoordinator.finish / ColorPickerSession.stop / ScreenRecordingModule.teardownToIdle+showPreview）。改动策略切换时必须保证恢复路径闭合，否则 Dock 图标会消失。
+- **F1 热键必须异步派发**：CGEventTap 回调上下文内不要做窗口创建/排序（AppDelegate 的 handler 已 `DispatchQueue.main.async` 脱出）。
 - 全局热键用 Carbon `RegisterEventHotKey`（`CarbonHotkeyRegistrar`），运行在非沙盒 App 内；F1 = keyCode 122。
 - 用户须在「系统设置 → 键盘」开启「将 F1 等键用作标准功能键」，否则需按 Fn+F1。
 - 首次截图 macOS 会弹屏幕录制权限对话框（`CGRequestScreenCaptureAccess`）。

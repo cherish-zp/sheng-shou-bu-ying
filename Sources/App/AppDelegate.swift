@@ -141,9 +141,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self = self else { return false }
             switch ScreenshotHotkeyAction.action(for: UInt32(keyCode)) {
             case .screenshot:
-                // F1：仅模块启用时消费并触发截图
+                // F1：仅模块启用时消费并触发截图。
+                // 必须异步派发：在 CGEventTap 回调上下文内创建/排序窗口，窗口不会加入
+                // 全屏应用所在 Space（macOS 26 实测，覆盖层在全屏屏上不渲染）；异步脱出
+                // 回调后与普通 runloop 时序一致。
                 guard self.moduleRegistry.isEnabled("screenshot") else { return false }
-                self.triggerScreenshot()
+                DispatchQueue.main.async { self.triggerScreenshot() }
                 return true
             case .pin:
                 // F3：仅在截图会话活跃时消费并贴图，否则放行给系统

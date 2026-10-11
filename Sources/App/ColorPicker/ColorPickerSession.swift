@@ -42,6 +42,11 @@ final class ColorPickerSession: NSObject {
     // MARK: - 会话生命周期
 
     func start() {
+        // 会话期临时切 .accessory：.regular 应用的 fullScreenAuxiliary 窗口无法合成到
+        // 其他应用的全屏 Space（macOS 26 实测，覆盖层/放大镜全屏下不渲染），.accessory 可以。
+        // 结束（stop）恢复 .regular（Dock 常驻图标）。
+        NSApp.setActivationPolicy(.accessory)
+        DiagLog.write("activationPolicy -> accessory (color picker session)")
         requestScreenCapturePermission()
 
         let mouseScreen = screen(containing: NSEvent.mouseLocation) ?? NSScreen.main
@@ -65,8 +70,7 @@ final class ColorPickerSession: NSObject {
             keyWindow.makeKeyAndOrderFront(nil)
             keyWindow.makeFirstResponder(keyWindow.pickerView)
         }
-        // 不切换 activationPolicy（与截图流程一致）：App 固定 .regular，放大镜/覆盖层
-        // 窗口自带 canJoinAllSpaces + fullScreenAuxiliary
+        // 不切换 activationPolicy（会话已在 start 进入 .accessory，stop 恢复 .regular）
         NSApp.activate(ignoringOtherApps: true)
 
         // 放大镜窗口 + ESC 本地监听兜底（覆盖层为 key 时视图 keyDown 已处理，此为第二道）
@@ -87,6 +91,9 @@ final class ColorPickerSession: NSObject {
         for window in overlayWindows { window.orderOut(nil) }
         overlayWindows.removeAll()
         screenBuffers.removeAll()
+        // 会话结束恢复 .regular（Dock 常驻图标）
+        NSApp.setActivationPolicy(.regular)
+        DiagLog.write("activationPolicy -> regular (color picker session ended)")
         DiagLog.write("ColorPickerSession: stopped")
         onFinish?()
     }

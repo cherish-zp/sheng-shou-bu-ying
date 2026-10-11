@@ -112,9 +112,13 @@ final class ScreenshotCoordinator {
         DiagLog.write("Captured \(displays.count) display(s), screenRecordingPreflight=\(CGPreflightScreenCaptureAccess())")
         guard !displays.isEmpty else { finish(); return }
 
-        // 不切换 activationPolicy（App 固定 .regular，Dock 常驻）：覆盖层窗口自带
-        // canJoinAllSpaces + fullScreenAuxiliary，在其他 App 全屏时也能于当前 Space 显示。
-        NSApp.activate(ignoringOtherApps: true)
+        // 会话期临时切 .accessory：macOS 26 上 .regular 应用的 fullScreenAuxiliary 窗口
+        // 无法合成到其他应用的全屏 Space（覆盖层全屏下不渲染），.accessory 可以。
+        // 会话结束（finish）恢复 .regular（Dock 常驻图标，见 main.swift）。
+        NSApp.setActivationPolicy(.accessory)
+        DiagLog.write("activationPolicy -> accessory (screenshot session)")
+
+        // 时序：先全部 orderFront 之后再 activate（设 key 事件用）。
 
         // 4. 为每个屏幕创建覆盖层窗口
         overlayWindows = displays.compactMap { display -> ScreenshotOverlayWindow? in
@@ -145,6 +149,9 @@ final class ScreenshotCoordinator {
         }
 
         DiagLog.write("Created \(overlayWindows.count) overlay window(s)")
+
+        // activate 必须在全部窗口 orderFront 之后（见上方时序说明），否则全屏 Space 上不可见
+        NSApp.activate(ignoringOtherApps: true)
 
         // 仅将主显示器窗口设为 key，确保键盘事件和首次鼠标点击直达视图
         if let keyWindow = overlayWindows.first(where: { $0.screen == NSScreen.main }) ?? overlayWindows.first {
@@ -534,6 +541,9 @@ final class ScreenshotCoordinator {
         }
 
         DiagLog.write("Screenshot finished")
+        // 会话结束恢复 .regular（Dock 常驻图标）；覆盖层已收起，无全屏合成需求
+        NSApp.setActivationPolicy(.regular)
+        DiagLog.write("activationPolicy -> regular (screenshot session ended)")
         onFinished?()
     }
 
