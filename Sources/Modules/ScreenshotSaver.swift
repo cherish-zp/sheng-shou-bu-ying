@@ -97,10 +97,34 @@ public final class ScreenshotSaver {
         return ScreenshotSaveOutcome(url: url, error: nil)
     }
 
+    /// NSImage → PNG/JPG 位图数据：CGImageDestination 直编。
+    /// 免去 tiffRepresentation 的等量未压缩 TIFF 中间拷贝（长截图可达数百 MB，
+    /// 编码解码两趟全在内存）；任一环节失败返回 nil。
+    public static func bitmapData(_ image: NSImage, format: ScreenshotFormat) -> Data? {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return nil
+        }
+        let uti: String
+        var properties: [CFString: Any] = [:]
+        switch format {
+        case .png:
+            uti = "public.png"
+        case .jpg:
+            uti = "public.jpeg"
+            // 与旧 NSBitmapImageRep 路径的默认质量对齐（无显式压缩系数 = 最高）
+            properties[kCGImageDestinationLossyCompressionQuality] = 1.0
+        }
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(output, uti as CFString, 1, nil) else {
+            return nil
+        }
+        CGImageDestinationAddImage(destination, cgImage, properties as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return output as Data
+    }
+
     /// NSImage → PNG 位图数据；任一环节失败返回 nil。
     public static func defaultPNGEncoder(_ image: NSImage) -> Data? {
-        guard let tiff = image.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff) else { return nil }
-        return rep.representation(using: .png, properties: [:])
+        bitmapData(image, format: .png)
     }
 }

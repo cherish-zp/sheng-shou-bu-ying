@@ -239,6 +239,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.requestProcessor?.processAll()
         }
+        // 空转轮询：给系统留 50% 调度余量，降低常驻唤醒的能耗
+        timer.tolerance = 0.25
         RunLoop.main.add(timer, forMode: .common)
         pollTimer = timer
     }

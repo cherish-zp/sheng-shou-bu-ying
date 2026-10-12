@@ -64,6 +64,17 @@ public enum TransferItemKindIntake {
         return TransferIntakeResult(items: items, rejectionMessage: rejection)
     }
 
+    /// 轻量类型判定（draggingEntered 用）：只读 pasteboard 类型列表，不解码载荷、
+    /// 不做 TIFF→PNG 重编码——拖拽会话进行中这些成本在主线程，enter 阶段只决定
+    /// 是否亮高亮与返回 .copy；完整解析与超限拒绝留到 performDragOperation。
+    public static func canIntake(_ pasteboard: NSPasteboard) -> Bool {
+        let types = Set(pasteboard.types ?? [])
+        let supported: Set<NSPasteboard.PasteboardType> = [
+            .string, .png, .tiff, .fileURL, .URL
+        ]
+        return !types.isDisjoint(with: supported)
+    }
+
     /// AppKit 桥接:从 pasteboard(拖拽或通用剪贴板)抽取载荷后走纯函数。
     public static func result(from pasteboard: NSPasteboard) -> TransferIntakeResult {
         let urls = (pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL]) ?? []

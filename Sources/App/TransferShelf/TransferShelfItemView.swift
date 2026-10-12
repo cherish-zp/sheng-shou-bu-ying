@@ -149,6 +149,41 @@ final class TransferShelfItemView: NSView {
 
     // MARK: - kind 外观
 
+    /// 图片条目解码缓存：NSImage 解码 + 像素尺寸一次完成（此前 icon 与 subtitle 各解一次
+    /// ≤5MB PNG，全量重建面板时每图条目同步解码 2 次）。NSCache 自动响应内存压力。
+    private static let imageDecodeCache = NSCache<NSString, ImageDecodeEntry>()
+
+    /// 缓存载荷：缩略图 + 像素尺寸。
+    private final class ImageDecodeEntry {
+        let thumbnail: NSImage?
+        let pixelSize: NSSize?
+        init?(data: Data) {
+            guard let image = NSImage(data: data) else { return nil }
+            let rep = image.representations.first
+            let pw = rep?.pixelsWide ?? 0
+            let ph = rep?.pixelsHigh ?? 0
+            pixelSize = (pw > 0 && ph > 0) ? NSSize(width: pw, height: ph) : nil
+            let side = TransferShelfLayoutSpec.itemIconSize
+            let thumbnail = NSImage(size: NSSize(width: side, height: side))
+            thumbnail.lockFocus()
+            image.draw(in: NSRect(x: 0, y: 0, width: side, height: side),
+                       from: NSRect(origin: .zero, size: image.size),
+                       operation: .sourceOver, fraction: 1.0)
+            thumbnail.unlockFocus()
+            self.thumbnail = thumbnail
+        }
+    }
+
+    /// 单次解码取缓存：key 用条目 id（imageData 随条目不可变）。
+    private static func decodedImageEntry(for item: TransferItem) -> ImageDecodeEntry? {
+        guard let data = item.imageData else { return nil }
+        let key = item.id.uuidString as NSString
+        if let hit = imageDecodeCache.object(forKey: key) { return hit }
+        guard let entry = ImageDecodeEntry(data: data) else { return nil }
+        imageDecodeCache.setObject(entry, forKey: key)
+        return entry
+    }
+
     private static func icon(for item: TransferItem) -> NSImage? {
         let side = TransferShelfLayoutSpec.itemIconSize
         switch item.kind {
@@ -159,14 +194,7 @@ final class TransferShelfItemView: NSView {
             icon?.size = NSSize(width: side, height: side)
             return icon
         case .image:
-            guard let data = item.imageData, let image = NSImage(data: data) else { return nil }
-            let thumbnail = NSImage(size: NSSize(width: side, height: side))
-            thumbnail.lockFocus()
-            image.draw(in: NSRect(x: 0, y: 0, width: side, height: side),
-                       from: NSRect(origin: .zero, size: image.size),
-                       operation: .sourceOver, fraction: 1.0)
-            thumbnail.unlockFocus()
-            return thumbnail
+            return decodedImageEntry(for: item)?.thumbnail
         case .text:
             let symbol = NSImage(systemSymbolName: "doc.text",
                                  accessibilityDescription: "文本") ?? NSImage()
@@ -188,8 +216,8 @@ final class TransferShelfItemView: NSView {
         case .text:
             return "\(item.text?.count ?? 0) 字 · \(time)"
         case .image:
-            if let data = item.imageData, let rep = NSBitmapImageRep(data: data) {
-                return "\(rep.pixelsWide) × \(rep.pixelsHigh) · \(time)"
+            if let size = decodedImageEntry(for: item)?.pixelSize {
+                return "\(Int(size.width)) × \(Int(size.height)) · \(time)"
             }
             return "图片 · \(time)"
         case .link:

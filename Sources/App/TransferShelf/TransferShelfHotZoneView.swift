@@ -52,8 +52,8 @@ final class TransferShelfHotZoneView: NSView {
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        let result = TransferItemKindIntake.result(from: sender.draggingPasteboard)
-        guard !result.items.isEmpty || result.rejectionMessage != nil else { return [] }
+        // enter 阶段只做轻量类型判定（见 TransferItemKindIntake.canIntake）
+        guard TransferItemKindIntake.canIntake(sender.draggingPasteboard) else { return [] }
         setHintVisible(true)
         onContentEntered?()
         return .copy

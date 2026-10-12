@@ -16,10 +16,15 @@ public enum TransferItemRelativeTime {
         return "\(minutes) 分钟前"
     }
 
-    private static func clockString(from date: Date) -> String {
+    /// 缓存的时钟 formatter（DateFormatter 创建 ~1ms 级；全部调用在主线程，无竞争）。
+    private static let clockFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    private static func clockString(from date: Date) -> String {
+        clockFormatter.string(from: date)
     }
 }
 

@@ -211,4 +211,20 @@ final class TransferItemKindIntakeTests: XCTestCase {
         XCTAssertTrue(result.items.isEmpty)
         XCTAssertNil(result.rejectionMessage)
     }
+    // MARK: - 轻量类型判定（draggingEntered 用）
+
+    func test_canIntake_byTypes() throws {
+        func board(_ types: [NSPasteboard.PasteboardType]) throws -> NSPasteboard {
+            let b = try XCTUnwrap(NSPasteboard(name: NSPasteboard.Name("canIntake-\(UUID().uuidString)")))
+            b.declareTypes(types, owner: nil)
+            return b
+        }
+        XCTAssertTrue(try TransferItemKindIntake.canIntake(board([.png])))
+        XCTAssertTrue(try TransferItemKindIntake.canIntake(board([.tiff])))
+        XCTAssertTrue(try TransferItemKindIntake.canIntake(board([.fileURL])))
+        XCTAssertTrue(try TransferItemKindIntake.canIntake(board([.string])))
+        XCTAssertTrue(try TransferItemKindIntake.canIntake(board([.URL])))
+        XCTAssertFalse(try TransferItemKindIntake.canIntake(board([.color])),
+                       "完全不支持的类型不亮高亮")
+    }
 }

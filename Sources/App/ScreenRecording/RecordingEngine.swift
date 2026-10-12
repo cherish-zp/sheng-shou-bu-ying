@@ -61,12 +61,18 @@ final class RecordingEngine: NSObject {
     /// 麦克风 tap 实际采样格式（引擎成功启动后才有值）；writer 须在 startWriting 前按它预建 input。
     private var micTapFormat: AVAudioFormat?
 
-    /// 锁保护的可变状态（stream/mic 回调队列与主线程并发访问）。
+    /// 锁保护的可变状态（stream/mic 回调队列、setup Task 与主线程并发访问）。
+    /// 资源句柄（stream/writer/各 input/audioEngine）的写侧也必须持锁——只锁标志位
+    /// 而裸写句柄等于没锁（审计 P1：start/finish 竞态可泄漏 SCStream 采集会话）。
     private let stateLock = NSLock()
     private var isPaused = false
     private var isFinishing = false
     private var sessionStarted = false
     private var didReportFirstFrame = false
+    /// setup（SCShareableContent 查询 + stream 启动）是否已收尾；期间到达的 finish 延迟执行。
+    private var setupCompleted = false
+    /// setup 期间请求的 finish（取值为 discard 参数）；setup 收尾时补执行。
+    private var pendingFinishDiscard: Bool?
     /// 麦克风时间锚：最近一帧视频的 (PTS, 宿主机钟时刻)。
     private var anchorVideoPTS = CMTime.invalid
     private var anchorHostTime = CMTime.invalid
@@ -140,7 +146,9 @@ final class RecordingEngine: NSObject {
             }
 
             let stream = SCStream(filter: filter, configuration: scConfig, delegate: self)
+            stateLock.lock()
             self.stream = stream
+            stateLock.unlock()
             let outputQueue = DispatchQueue(label: "com.zp.shengshoubuying.recording.stream")
             try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: outputQueue)
             if params.systemAudioEnabled {
@@ -148,11 +156,31 @@ final class RecordingEngine: NSObject {
             }
             try await stream.startCapture()
             DiagLog.write("RecordingEngine: capture started")
+
+            stateLock.lock()
+            setupCompleted = true
+            let pending = pendingFinishDiscard
+            pendingFinishDiscard = nil
+            stateLock.unlock()
+            if let pending = pending {
+                // setup 期间用户已请求停止：立即收尾，避免采集会话无人停止
+                DiagLog.write("RecordingEngine: finish arrived during setup, finishing now")
+                finish(discard: pending)
+            }
         } catch {
             DiagLog.write("RecordingEngine.start failed: \(error)")
             stopMicrophone()
+            stateLock.lock()
             stream = nil
+            setupCompleted = true
+            let pending = pendingFinishDiscard
+            pendingFinishDiscard = nil
+            stateLock.unlock()
+            try? FileManager.default.removeItem(at: params.outputURL)
             report(.failure(error))
+            if pending != nil {
+                DiagLog.write("RecordingEngine: pending finish dropped (setup failed, failure already reported)")
+            }
         }
     }
 
@@ -181,14 +209,23 @@ final class RecordingEngine: NSObject {
             stateLock.unlock()
             return
         }
+        guard setupCompleted else {
+            // setup 尚未收尾（SCShareableContent 查询/启动采集进行中）：记录请求，
+            // setup 收尾时补执行——否则 setup 随后启动的采集将无人停止
+            pendingFinishDiscard = discard
+            stateLock.unlock()
+            DiagLog.write("RecordingEngine.finish deferred (setup in progress, discard=\(discard))")
+            return
+        }
         isFinishing = true
         isPaused = true
-        stateLock.unlock()
-        DiagLog.write("RecordingEngine.finish(discard=\(discard)) droppedVideo=\(droppedVideoFrames)")
-
-        stopMicrophone()
+        let dropped = droppedVideoFrames
         let stream = self.stream
         self.stream = nil
+        stateLock.unlock()
+        DiagLog.write("RecordingEngine.finish(discard=\(discard)) droppedVideo=\(dropped)")
+
+        stopMicrophone()
         Task { [weak self] in
             try? await stream?.stopCapture()
             await MainActor.run {
@@ -304,9 +341,12 @@ final class RecordingEngine: NSObject {
             if videoInput.isReadyForMoreMediaData {
                 videoInput.append(sampleBuffer)
             } else {
+                self.stateLock.lock()
                 self.droppedVideoFrames += 1
-                if self.droppedVideoFrames % 30 == 1 {
-                    DiagLog.write("RecordingEngine: video input busy, dropped total=\(self.droppedVideoFrames)")
+                let dropped = self.droppedVideoFrames
+                self.stateLock.unlock()
+                if dropped % 30 == 1 {
+                    DiagLog.write("RecordingEngine: video input busy, dropped total=\(dropped)")
                 }
             }
         }
@@ -321,7 +361,10 @@ final class RecordingEngine: NSObject {
         writerQueue.async { [weak self] in
             guard let self = self else { return }
             // input 已在 makeWriter 阶段（startWriting 前）创建；此处为 nil 说明配置异常，静默丢弃
-            guard let audioInput = self.systemAudioInput else { return }
+            self.stateLock.lock()
+            let audioInput = self.systemAudioInput
+            self.stateLock.unlock()
+            guard let audioInput = audioInput else { return }
             if audioInput.isReadyForMoreMediaData {
                 audioInput.append(sampleBuffer)
             }
@@ -357,8 +400,10 @@ final class RecordingEngine: NSObject {
         engine.prepare()
         do {
             try engine.start()
+            stateLock.lock()
             audioEngine = engine
             micTapFormat = tapFormat
+            stateLock.unlock()
             DiagLog.write("RecordingEngine: mic tap started rate=\(tapFormat.sampleRate) ch=\(tapFormat.channelCount)")
         } catch {
             DiagLog.write("RecordingEngine: mic engine start failed: \(error)")
@@ -366,8 +411,11 @@ final class RecordingEngine: NSObject {
     }
 
     private func stopMicrophone() {
-        guard let engine = audioEngine else { return }
+        stateLock.lock()
+        let engine = audioEngine
         audioEngine = nil
+        stateLock.unlock()
+        guard let engine = engine else { return }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         DiagLog.write("RecordingEngine: mic stopped")
@@ -397,7 +445,10 @@ final class RecordingEngine: NSObject {
         writerQueue.async { [weak self] in
             guard let self = self else { return }
             // input 已在 makeWriter 阶段（startWriting 前）按 micTapFormat 预创建
-            guard let micInput = self.micInput else { return }
+            self.stateLock.lock()
+            let micInput = self.micInput
+            self.stateLock.unlock()
+            guard let micInput = micInput else { return }
             guard micInput.isReadyForMoreMediaData,
                   let sampleBuffer = Self.makeCMSampleBuffer(from: buffer, pts: pts) else { return }
             micInput.append(sampleBuffer)
@@ -428,6 +479,7 @@ final class RecordingEngine: NSObject {
             return nil
         }
         writer.add(input)
+        stateLock.lock()
         self.writer = writer
         self.videoInput = input
 
@@ -452,6 +504,7 @@ final class RecordingEngine: NSObject {
         } else if params.microphoneEnabled {
             DiagLog.write("RecordingEngine: mic enabled but tap format unavailable, recording without mic input")
         }
+        stateLock.unlock()
 
         DiagLog.write("RecordingEngine: writer ready \(width)x\(height)@\(params.frameRate) bitrate=\(bitrate)")
         return writer

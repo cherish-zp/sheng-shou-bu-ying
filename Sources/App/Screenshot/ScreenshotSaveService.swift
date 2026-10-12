@@ -84,10 +84,8 @@ final class ScreenshotSaveService {
         let name = ScreenshotFileNameBuilder.uniqueFileName(
             date: Date(), config: config, existingNames: existing)
         let url = config.saveDirectory.appendingPathComponent(name)
-        // 3. 位图编码（PNG/JPG 跟随配置），编码与写盘分别 do/catch
-        guard let tiff = image.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff),
-              let data = rep.representation(using: config.format.nsBitmapFileType, properties: [:]) else {
+        // 3. 位图编码（PNG/JPG 跟随配置）：CGImageDestination 直编，免 TIFF 中间拷贝
+        guard let data = ScreenshotSaver.bitmapData(image, format: config.format) else {
             return .failure(.encodingFailed)
         }
         // 4. 写盘
@@ -97,15 +95,5 @@ final class ScreenshotSaveService {
             return .failure(.writeFailed(underlying: error))
         }
         return .success(url)
-    }
-}
-
-extension ScreenshotFormat {
-    /// 映射到 NSBitmapImageRep 的编码类型。
-    var nsBitmapFileType: NSBitmapImageRep.FileType {
-        switch self {
-        case .png: return .png
-        case .jpg: return .jpeg
-        }
     }
 }

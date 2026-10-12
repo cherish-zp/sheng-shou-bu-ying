@@ -350,10 +350,19 @@ final class PinSettingsPaneView: NSView {
         persistAppearance()
     }
 
+    /// 滑杆防抖：NSSlider continuous 每个刻度都触发 action，持久化+全局通知延迟到
+    /// 停止拖动 120ms 后执行；数值标签即时更新。
+    private var appearancePersistWorkItem: DispatchWorkItem?
+
     @objc private func appearanceChanged(_ sender: NSSlider) {
         heightValueLabel.stringValue = "\(heightSlider.integerValue)pt"
         topInsetValueLabel.stringValue = "\(topInsetSlider.integerValue)pt"
-        persistAppearance()
+        appearancePersistWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.persistAppearance()
+        }
+        appearancePersistWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: item)
     }
 
     private func persistAppearance() {

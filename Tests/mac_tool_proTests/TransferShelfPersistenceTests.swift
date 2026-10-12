@@ -81,9 +81,27 @@ final class TransferShelfPersistenceTests: XCTestCase {
         try Data("x".utf8).write(to: url)
 
         controller.shelfView?.onAccept?([url])
+        controller.flushPendingPersist()
 
         let items = try persistedItems()
         XCTAssertEqual(items.map(\.url), [url], "注入路径拖入的条目必须落盘（.atomic 写入）")
+    }
+
+    func test_persistIsDebounced_notWrittenImmediately() throws {
+        let controller = TransferShelfPanelController(
+            store: TransferShelfStore(),
+            storageURL: storageURL
+        )
+        controller.showPanel()
+        let url = workDir.appendingPathComponent("debounced.txt")
+        try Data("x".utf8).write(to: url)
+
+        controller.shelfView?.onAccept?([url])
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: storageURL.path),
+                       "防抖窗口内不得同步落盘（批量拖入合并为一次写）")
+        controller.flushPendingPersist()
+        XCTAssertEqual(try persistedItems().map(\.url), [url], "flush 后必须完整落盘")
     }
 
     func test_maxCountSurvivesPersistenceRoundtrip() throws {
@@ -95,6 +113,7 @@ final class TransferShelfPersistenceTests: XCTestCase {
         let url = workDir.appendingPathComponent("a.txt")
         try Data("x".utf8).write(to: url)
         controller.shelfView?.onAccept?([url])
+        controller.flushPendingPersist()
 
         // 用相同 maxCount 重新加载：上限配置不得丢失
         let reloaded = TransferShelfPanelController(storageURL: storageURL, maxCount: 7)

@@ -36,6 +36,15 @@ final class TransferShelfPanelController: NSObject {
     private static let defaultPurgeQueue = DispatchQueue(
         label: "com.zp.shengshoubuying.transfer-shelf.purge", qos: .utility
     )
+    /// 持久化防抖窗口：批量拖入/连续删除的多次 didSet 合并为一次落盘。
+    private static let persistDelay: TimeInterval = 0.3
+    /// 持久化队列：encode 后的写盘在 utility 队列执行，主线程只做轻量调度。
+    private let persistQueue = DispatchQueue(
+        label: "com.zp.shengshoubuying.transfer-shelf.persist", qos: .utility
+    )
+    /// 待落盘快照（主线程写、后台读）；最近一次 persist 的内容，防抖窗口内被后续覆盖。
+    private var pendingPersistSnapshot: (data: Data, url: URL)?
+    private var persistWorkItem: DispatchWorkItem?
 
     /// 模块持有：默认存储路径，启动时恢复持久化数据。
     override convenience init() {
@@ -394,16 +403,43 @@ final class TransferShelfPanelController: NSObject {
 
     // MARK: - 持久化
 
+    /// 防抖调度：snapshot 记入 pending，utility 队列延迟落盘；窗口内的新变更 cancel 重排，
+    /// 批量拖入 N 条只触发一次磁盘写（此前逐条 didSet 同步整库写，主线程卡顿）。
     private func persist() {
         guard let data = store.encode() else {
             DiagLog.write("TransferShelf: encode failed, skip persist")
             return
         }
+        pendingPersistSnapshot = (data, storageURL)
+        persistWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.writePendingSnapshot()
+        }
+        persistWorkItem = item
+        persistQueue.asyncAfter(deadline: .now() + Self.persistDelay, execute: item)
+    }
+
+    /// workitem 主体（utility 队列）：写当前待落盘快照。被 cancel 的旧任务不会执行，
+    /// 故不存在旧快照覆盖新快照的回退写。
+    private func writePendingSnapshot() {
+        guard let pending = pendingPersistSnapshot else { return }
         do {
-            try data.write(to: storageURL, options: .atomic)
+            try pending.data.write(to: pending.url, options: .atomic)
         } catch {
             DiagLog.write("TransferShelf: persist failed: \(error.localizedDescription)")
         }
+    }
+
+    /// 立即落盘当前待写快照并取消已调度的防抖任务（应用退出/测试断言用）。
+    func flushPendingPersist() {
+        persistWorkItem?.cancel()
+        guard let pending = pendingPersistSnapshot else { return }
+        do {
+            try pending.data.write(to: pending.url, options: .atomic)
+        } catch {
+            DiagLog.write("TransferShelf: flush persist failed: \(error.localizedDescription)")
+        }
+        pendingPersistSnapshot = nil
     }
 
     private func loadPersisted() {

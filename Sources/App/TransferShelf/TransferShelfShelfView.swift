@@ -287,8 +287,9 @@ final class TransferShelfShelfView: NSView {
     // MARK: - 拖入接收（四类内容，经 TransferItemKindIntake）
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        let result = TransferItemKindIntake.result(from: sender.draggingPasteboard)
-        guard !result.items.isEmpty || result.rejectionMessage != nil else { return [] }
+        // enter 阶段只做轻量类型判定（不解码载荷/不重编码 TIFF，见 canIntake）；
+        // 完整解析与超限拒绝在 performDragOperation。
+        guard TransferItemKindIntake.canIntake(sender.draggingPasteboard) else { return [] }
         onInteracting?()
         layer?.borderColor = NSColor.controlAccentColor.cgColor
         layer?.borderWidth = 2
