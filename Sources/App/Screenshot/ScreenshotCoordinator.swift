@@ -8,10 +8,12 @@ import Vision
 /// + ScrollCaptureToolbar 控制工具条 + LiveStitchPreviewView 实时预览 + ScrollResultPanel 结果窗。
 final class ScreenshotCoordinator {
 
+    /// 贴图的 App 级持有者（由 ScreenshotModule 注入跨会话持有）：协调器每次 F1 重建，
+    /// 贴图生命周期必须独立于本实例，否则下一次截图会清空全部在屏贴图。
+    private let pinStore: PinStore<PinWindow>
     private let captureService = ScreenCaptureService()
     private var overlayWindows: [ScreenshotOverlayWindow] = []
     private var toolbar: ScreenshotToolbar?
-    private var pinWindows: [PinWindow] = []
     private var activeOverlay: ScreenshotOverlayWindow?
     private var selectionRect: CGRect?
     /// 画布设置：持久化到 UserDefaults，跨会话/跨重启保持用户所选（圆角/阴影），
@@ -28,6 +30,10 @@ final class ScreenshotCoordinator {
     private let feedback = ScreenshotFeedbackPresenter()
     /// 统一保存服务（普通截图与长截图结果窗共用，成败均有提示，见 ScreenshotSaveService）。
     private lazy var saveService = ScreenshotSaveService(feedback: feedback)
+
+    init(pinStore: PinStore<PinWindow> = PinStore()) {
+        self.pinStore = pinStore
+    }
 
     // MARK: 延时截图 / 重复上次区域 / OCR 增强 状态
 
@@ -495,10 +501,10 @@ final class ScreenshotCoordinator {
                             cornerRadius: ptRadius)
         pin.onClose = { [weak self, weak pin] in
             guard let pin = pin else { return }
-            self?.pinWindows.removeAll { $0 === pin }
+            self?.pinStore.remove(pin)
         }
         pin.makeKeyAndOrderFront(nil)
-        pinWindows.append(pin)
+        pinStore.add(pin)
     }
 
     /// 贴图当前选区并结束截图会话（F3 触发）。无选区时为空操作。
@@ -1374,11 +1380,11 @@ extension ScreenshotCoordinator: ScreenshotToolbarDelegate {
         let pin = PinWindow(cgImage: cgImage, displaySize: image.size, at: point, cornerRadius: 0)
         pin.onClose = { [weak self, weak pin] in
             guard let self = self, let pin = pin else { return }
-            self.pinWindows.removeAll { $0 === pin }
+            self.pinStore.remove(pin)
         }
         pin.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        pinWindows.append(pin)
+        pinStore.add(pin)
         DiagLog.write("Scroll capture pinned at \(point), size=\(image.size)")
     }
 

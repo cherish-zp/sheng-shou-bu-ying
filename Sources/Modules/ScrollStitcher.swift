@@ -416,9 +416,12 @@ public enum ScrollStitcher {
     ///   64×64 真实角标影响 ≥6 块 → true。小面积瞬态（光标）不再既可能漏报又可能误报。
     public static func contentChanged(_ a: CGImage, _ b: CGImage) -> Bool {
         guard a.width == b.width, a.height == b.height else { return true }
-        let w = a.width, h = a.height
+        // 分块均值比较只需每块 ~64 个样本（24×24 块 × 8 步），把两帧降采样到 ≤192px
+        // 再做同款统计——避免逐帧两次全图解码（retina 选区每帧 ~2×48MB 瞬时分配，
+        // 是滚动采集期主线程卡顿的主因）。均值对降采样线性过滤不敏感，判定语义不变。
+        guard let a2 = downsampled(a), let b2 = downsampled(b) else { return true }
+        let w = a2.width, h = a2.height
         guard w > 0, h > 0 else { return false }
-        guard let bufA = decodeTopDown(a), let bufB = decodeTopDown(b) else { return true }
 
         let grid = 24
         let cols = min(grid, w), rows = min(grid, h)
@@ -445,8 +448,8 @@ public enum ScrollStitcher {
                     let rowOffset = y * w * 4
                     while x < x1 {
                         let idx = rowOffset + x * 4
-                        sumA[0] += Int(bufA[idx]); sumA[1] += Int(bufA[idx + 1]); sumA[2] += Int(bufA[idx + 2])
-                        sumB[0] += Int(bufB[idx]); sumB[1] += Int(bufB[idx + 1]); sumB[2] += Int(bufB[idx + 2])
+                        sumA[0] += Int(a2.buf[idx]); sumA[1] += Int(a2.buf[idx + 1]); sumA[2] += Int(a2.buf[idx + 2])
+                        sumB[0] += Int(b2.buf[idx]); sumB[1] += Int(b2.buf[idx + 1]); sumB[2] += Int(b2.buf[idx + 2])
                         pixelSamples += 1
                         x += stepX
                     }
@@ -636,17 +639,20 @@ public enum ScrollStitcher {
 
     // MARK: - 内部：解码
 
-    /// top-down 解码（内存 row 0 = 视觉顶行），供 contentChanged 使用。
-    private static func decodeTopDown(_ image: CGImage) -> [UInt8]? {
+    /// 降采样 RGBA 缓冲：contentChanged 的粗判输入（≤maxDim，等比）。
+    private static func downsampled(_ image: CGImage, maxDim: Int = 192) -> (buf: [UInt8], width: Int, height: Int)? {
         let w = image.width, h = image.height
         guard w > 0, h > 0 else { return nil }
-        let bpr = w * 4
-        var buffer = [UInt8](repeating: 0, count: bpr * h)
+        let scale = min(1.0, Double(maxDim) / Double(max(w, h)))
+        let w2 = max(1, Int((Double(w) * scale).rounded()))
+        let h2 = max(1, Int((Double(h) * scale).rounded()))
+        var buffer = [UInt8](repeating: 0, count: w2 * h2 * 4)
         let colorSpace = CGColorSpaceCreateDeviceRGB()
-        guard let ctx = CGContext(data: &buffer, width: w, height: h, bitsPerComponent: 8,
-                                  bytesPerRow: bpr, space: colorSpace,
+        guard let ctx = CGContext(data: &buffer, width: w2, height: h2, bitsPerComponent: 8,
+                                  bytesPerRow: w2 * 4, space: colorSpace,
                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
-        return buffer
+        ctx.interpolationQuality = .low
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w2, height: h2))
+        return (buffer, w2, h2)
     }
 }

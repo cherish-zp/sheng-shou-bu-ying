@@ -223,6 +223,20 @@ final class ScrollStitcherTests: XCTestCase {
         XCTAssertTrue(ScrollStitcher.contentChanged(base, makeImage(buf, w: w, h: h)))
     }
 
+    func test_contentChanged_大图走降采样_语义保持() {
+        // 尺寸 > 192 触发降采样粗判路径：小光标（亚像素级）不误报，大块内容变化仍检出
+        let w = 1200, h = 1800
+        let base = docFrame(w: w, h: h, seed: 27_182)
+        var cursor = decodeTopDown(base)
+        fillRect(&cursor, w: w, x0: 600, y0: 900, x1: 608, y1: 916, c: (0, 0, 0))
+        XCTAssertFalse(ScrollStitcher.contentChanged(base, makeImage(cursor, w: w, h: h)),
+                       "降采样后小光标仍不应误报")
+        var changed = decodeTopDown(base)
+        fillRect(&changed, w: w, x0: 200, y0: 400, x1: 700, y1: 900, c: (30, 30, 30))
+        XCTAssertTrue(ScrollStitcher.contentChanged(base, makeImage(changed, w: w, h: h)),
+                      "大块内容变化必须检出")
+    }
+
     // MARK: - i. stitch 失败边界
 
     func test_stitch_边界1失败_丢后帧并记录dropped() {

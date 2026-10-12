@@ -5,16 +5,28 @@ import CoreGraphics
 /// 使用 CoreGraphics CGDisplayCreateImage（macOS 13+ 兼容）。
 final class ScreenCaptureService {
 
+    /// 诊断开关（默认关）：亮度带分析对每块屏做一次全图解码（5K 屏 ~59MB 临时分配 +
+    /// 主线程数十 ms），仅排查 HDR"截图变暗"类问题时启用：
+    /// `defaults write com.zp.shengshoubuying diag.captureLuminance -bool YES`
+    public static let luminanceDiagnosticsKey = "diag.captureLuminance"
+
+    public static func luminanceDiagnosticsEnabled(defaults: UserDefaults = .standard) -> Bool {
+        defaults.bool(forKey: luminanceDiagnosticsKey)
+    }
+
     /// 捕获所有活跃显示器，返回 [(显示器ID, 画面, 屏幕Frame)]。
     func captureAllDisplays() -> [(displayID: CGDirectDisplayID, image: CGImage, frame: CGRect)] {
         var maxDisplays: UInt32 = 8
         var displayIDs = [CGDirectDisplayID](repeating: 0, count: Int(maxDisplays))
         CGGetActiveDisplayList(maxDisplays, &displayIDs, &maxDisplays)
 
+        let logLuminance = Self.luminanceDiagnosticsEnabled()
         var results: [(CGDirectDisplayID, CGImage, CGRect)] = []
         for id in displayIDs.prefix(Int(maxDisplays)) {
             guard let image = CGDisplayCreateImage(id) else { continue }
-            logBandLuminance(image, displayID: id)
+            if logLuminance {
+                logBandLuminance(image, displayID: id)
+            }
             let bounds = CGDisplayBounds(id)
             results.append((id, image, bounds))
         }

@@ -9,6 +9,8 @@ final class ScreenshotModule: AppModule {
     let defaultHotkey = Hotkey.f1
 
     let session = ScreenshotSession()
+    /// 贴图 App 级持有：跨协调器会话存活（协调器每次 F1 重建，贴图不能跟着释放）
+    private let pinStore = PinStore<PinWindow>()
     private var coordinator: ScreenshotCoordinator?
 
     func perform() {
@@ -22,7 +24,7 @@ final class ScreenshotModule: AppModule {
         // 先结束旧的协调器（清理残留窗口）
         coordinator?.finish()
 
-        let coord = ScreenshotCoordinator()
+        let coord = ScreenshotCoordinator(pinStore: pinStore)
         coord.onFinished = { [weak self] in
             self?.session.finish()
         }

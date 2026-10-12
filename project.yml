@@ -62,6 +62,8 @@ targets:
       - path: Sources/App/TransferShelf
       - path: Sources/App/Screenshot/PinWindow.swift
       - path: Sources/App/Screenshot/PinContextMenu.swift
+      - path: Sources/App/Screenshot/PinStore.swift
+      - path: Sources/App/Screenshot/ScreenCaptureService.swift
       - path: Sources/App/DiagLog.swift
     settings:
       base:

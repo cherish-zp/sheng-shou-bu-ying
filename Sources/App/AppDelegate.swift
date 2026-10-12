@@ -18,6 +18,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 支持目录迁移（mac_tool_pro → 圣手捕影）必须最先执行，任何数据读取都在其后
         AppSupportDirectory.migrateIfNeeded()
+        // Finder 工具开关配置：App 侧旧文件并入扩展容器（App 写容器、扩展读容器）
+        ToolConfig.migrateLegacyConfigIfNeeded(
+            legacyFileURL: AppSupportDirectory.url.appendingPathComponent("config.json"),
+            destinationFileURL: ToolConfig.fileURL)
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let statusImage = NSImage(named: "MenuBarIcon") {
