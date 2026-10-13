@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var moduleRegistry: AppModuleRegistry!
     private var screenshotModule: ScreenshotModule!
     private var transferShelfModule: TransferShelfModule!
+    private var portMonitorModule: PortMonitorModule!
     private var globalKeyMonitor: Any?
     private var eventTapListener: CGEventTapHotkeyListener?
     private var permissionTimer: Timer?
@@ -108,6 +109,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         moduleRegistry.register(ScreenRecordingModule())
         moduleRegistry.register(ColorPickerModule())
+        portMonitorModule = PortMonitorModule()
+        moduleRegistry.register(portMonitorModule)
     }
 
     /// 热键监听：三层兜底确保 F1 能触发截图。
@@ -228,9 +231,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "管理片段...", action: #selector(showSnippetSettings), keyEquivalent: "")
 
         menu.addItem(.separator())
+        let portItem = NSMenuItem(title: "端口占用…", action: #selector(openPortMonitor), keyEquivalent: "")
+        portItem.target = self
+        portItem.isEnabled = moduleRegistry.isEnabled("portMonitor")
+        menu.addItem(portItem)
+
+        menu.addItem(.separator())
         menu.addItem(withTitle: "设置…", action: #selector(showSettings), keyEquivalent: ",")
         menu.addItem(withTitle: "退出 \(AppBrand.displayName)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
+    }
+
+    /// 菜单栏顶层「端口占用…」：打开占用窗口。
+    @objc private func openPortMonitor() {
+        portMonitorModule.perform()
     }
 
     /// 轮询扩展容器里的"新建文件"请求队列，由本非沙盒进程真正创建文件。
