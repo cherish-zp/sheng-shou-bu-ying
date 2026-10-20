@@ -12,7 +12,7 @@ final class ColorPickerModule: AppModule {
     let id = "color-picker"
     let title = "取色器"
     /// F5 = kVK_F5(96)，取色器默认快捷键。
-    let defaultHotkey = Hotkey.f5
+    let defaultHotkey: Hotkey? = .f5
 
     /// 最近取色历史（容量 5，#RRGGBB，内存态不落盘）。
     /// v1 无 UI，仅暴露数组属性供未来挂菜单展示。

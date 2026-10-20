@@ -53,6 +53,19 @@ final class AppModuleRegistryTests: XCTestCase {
         XCTAssertEqual(module.performCount, 1)
     }
 
+    func test_moduleWithoutHotkey_registersNothing() {
+        let registrar = FakeHotkeyRegistrar()
+        let registry = makeRegistry(hotkeyManager: HotkeyManager(registrar: registrar))
+        let module = FakeModule(id: "portMonitor", hotkey: nil)
+        registry.register(module)
+
+        XCTAssertTrue(registrar.registered.isEmpty, "无热键模块不得注册任何全局热键")
+
+        registry.setEnabled("portMonitor", false)
+        registry.setEnabled("portMonitor", true)
+        XCTAssertTrue(registrar.registered.isEmpty, "启停切换也不得注册热键")
+    }
+
     private func makeRegistry(hotkeyManager: HotkeyManager? = nil) -> AppModuleRegistry {
         let defaults = UserDefaults(suiteName: "AppModuleRegistryTests")!
         defaults.removePersistentDomain(forName: "AppModuleRegistryTests")
@@ -66,9 +79,9 @@ final class AppModuleRegistryTests: XCTestCase {
 final class FakeModule: AppModule {
     let id: String
     let title: String
-    let defaultHotkey: Hotkey
+    let defaultHotkey: Hotkey?
     var performCount = 0
-    init(id: String, hotkey: Hotkey = .f1) {
+    init(id: String, hotkey: Hotkey? = .f1) {
         self.id = id
         self.title = id
         self.defaultHotkey = hotkey

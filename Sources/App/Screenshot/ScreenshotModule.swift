@@ -6,7 +6,7 @@ import AppKit
 final class ScreenshotModule: AppModule {
     let id = "screenshot"
     let title = "截图"
-    let defaultHotkey = Hotkey.f1
+    let defaultHotkey: Hotkey? = .f1
 
     let session = ScreenshotSession()
     /// 贴图 App 级持有：跨协调器会话存活（协调器每次 F1 重建，贴图不能跟着释放）

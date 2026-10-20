@@ -8,7 +8,7 @@ final class TransferShelfModule: AppModule {
     let id = "transfer-shelf"
     let title = "文件中转"
     /// F2 = kVK_F2(120)，手动呼出中转面板。
-    let defaultHotkey = Hotkey(keyCode: 120)
+    let defaultHotkey: Hotkey? = .f2
 
     /// 模块自有控制器实例（去全局单例；视图层经闭包回调到控制器）。
     private let controller = TransferShelfPanelController()

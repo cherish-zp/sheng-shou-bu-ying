@@ -125,8 +125,8 @@ final class PortKillService {
 final class PortMonitorModule: NSObject, AppModule {
     let id = "portMonitor"
     let title = "端口占用"
-    /// F2：唯一未占用的功能键（F1 截图/F3 贴图/F4 录屏/F5 取色/F6 恢复贴图）。
-    let defaultHotkey = Hotkey(keyCode: 120)
+    /// 不注册全局热键：功能键已全部占用（F2 归中转站），经菜单「端口占用…」触发。
+    let defaultHotkey: Hotkey? = nil
 
     private let queryService = PortQueryService()
     private let killService = PortKillService()

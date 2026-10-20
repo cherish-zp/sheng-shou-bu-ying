@@ -5,7 +5,8 @@ import AppKit
 public protocol AppModule: AnyObject {
     var id: String { get }
     var title: String { get }
-    var defaultHotkey: Hotkey { get }
+    /// 全局热键；nil = 不注册热键、仅经菜单/按钮触发（菜单热键标注随之隐藏）。
+    var defaultHotkey: Hotkey? { get }
     func perform()
     /// 模块启用后启动常驻资源（全局监听等）。默认无操作。
     func start()

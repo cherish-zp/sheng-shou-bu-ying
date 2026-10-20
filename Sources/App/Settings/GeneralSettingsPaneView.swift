@@ -72,7 +72,7 @@ final class GeneralSettingsPaneView: NSView {
     }
 
     private func makeModuleRow(module: AppModule) -> NSView {
-        let suffix = module.defaultHotkey.functionKeyLabel.map { " (\($0))" } ?? ""
+        let suffix = module.defaultHotkey?.functionKeyLabel.map { " (\($0))" } ?? ""
         let button = NSButton(
             checkboxWithTitle: module.title + suffix,
             target: self,

@@ -35,12 +35,15 @@ public final class AppModuleRegistry {
         if on {
             bind(module)
         } else {
-            hotkeyManager.unregister(module.defaultHotkey)
+            if let hotkey = module.defaultHotkey {
+            hotkeyManager.unregister(hotkey)
+        }
         }
     }
 
     private func bind(_ module: AppModule) {
-        hotkeyManager.register(module.defaultHotkey) { [weak module] in
+        guard let hotkey = module.defaultHotkey else { return }
+        hotkeyManager.register(hotkey) { [weak module] in
             module?.perform()
         }
     }
