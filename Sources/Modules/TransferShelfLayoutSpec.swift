@@ -30,10 +30,10 @@ public enum TransferShelfLayoutSpec {
 
     /// 面板发丝描边宽度与条目圆角（苹果风细节）。
     public static let panelHairlineWidth: CGFloat = 1
-    public static let itemCornerRadius: CGFloat = 12
+    public static let itemCornerRadius: CGFloat = 8
 
-    /// 卡片图标边长。
-    public static let itemIconSize: CGFloat = 32
+    /// 行卡图标边长（Apple 列表比例）。
+    public static let itemIconSize: CGFloat = 24
 
     /// 条目右上角单独删除按钮。
     public static let itemClearButtonSize: CGFloat = 12
@@ -54,8 +54,8 @@ public enum TransferShelfLayoutSpec {
     /// UI ① 毛玻璃材质（圆角裁剪由容器 layer 负责）。
     public static let panelMaterial: NSVisualEffectView.Material = .hudWindow
 
-    /// 卡片尺寸（图标 + 单行名称，浮引/Yoink 式方形卡片）。
-    public static let cardSize = NSSize(width: 84, height: 84)
+    /// 行卡尺寸（图标左 + 名称右，Apple 列表条目语言：高 44、紧凑不滚动）。
+    public static let cardSize = NSSize(width: 170, height: 44)
 
     /// 面板两侧距屏幕边缘的最小留白：面板拉长也不贴边。
     public static let screenSideMargin: CGFloat = 24

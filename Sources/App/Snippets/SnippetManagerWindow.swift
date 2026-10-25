@@ -1,7 +1,8 @@
 import AppKit
 
-/// 片段管理视图：master-detail 布局，可独立成窗口，也可嵌入设置页。
-final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSource, NSTableViewDelegate {
+/// 片段管理视图：master-detail（Apple 系统设置语言）——左侧系统高亮列表 + ＋/－ 工具条，
+/// 右侧灰标签表单；编辑自动保存（防抖 400ms，⌘S 立即），双击列表条目复制。
+final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSource, NSTableViewDelegate, NSTextViewDelegate {
 
     private let manager = SnippetManager.shared
     private var tableView: NSTableView!
@@ -11,8 +12,9 @@ final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSo
     private var selectedSnippet: Snippet?
     private var filteredSnippets: [Snippet] = []
     private var emptyStateLabel: NSTextField!
-    private var copyButton: NSButton!
-    private var deleteButton: NSButton!
+    private var minusButton: NSButton!
+    /// 自动保存防抖（编辑即存，无需保存按钮）。
+    private var autosaveWorkItem: DispatchWorkItem?
 
     var onSnippetActivated: (() -> Void)?
     let undoableFieldEditor = UndoFieldEditorPolicy.makeFieldEditor()
@@ -27,6 +29,15 @@ final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSo
 
     required init?(coder: NSCoder) { fatalError("unsupported") }
 
+    /// ⌘S 立即保存（自动保存之外的兜底习惯键）。
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "s" {
+            saveNow(manual: true)
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
     // MARK: - UI 构建
 
     private func buildUI() {
@@ -37,6 +48,7 @@ final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSo
         bg.translatesAutoresizingMaskIntoConstraints = false
         addSubview(bg)
 
+        // —— 左列：搜索 + 系统高亮列表 + ＋/－ 工具条（系统设置语言，无卡片包装）——
         searchField = NSSearchField()
         searchField.translatesAutoresizingMaskIntoConstraints = false
         searchField.placeholderString = "搜索片段…"
@@ -45,15 +57,13 @@ final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSo
         searchField.delegate = self
         bg.addSubview(searchField)
 
-        let listCard = makeCard()
-        let listContent = listCard.contentView!
-        bg.addSubview(listCard)
-
         let scrollView = NSScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.hasVerticalScroller = true
         scrollView.borderType = .noBorder
         scrollView.drawsBackground = false
+        scrollView.automaticallyAdjustsContentInsets = false
+        scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
 
         tableView = NSTableView()
         tableView.dataSource = self
@@ -63,40 +73,51 @@ final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSo
         tableView.doubleAction = #selector(tableDoubleClicked)
         tableView.headerView = nil
         tableView.backgroundColor = .clear
-        tableView.rowHeight = 54
-        tableView.intercellSpacing = NSSize(width: 0, height: 4)
+        tableView.rowHeight = 44
+        tableView.intercellSpacing = NSSize(width: 0, height: 2)
         let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("snippet"))
         col.resizingMask = .autoresizingMask
         tableView.addTableColumn(col)
         scrollView.documentView = tableView
-        listContent.addSubview(scrollView)
+        bg.addSubview(scrollView)
 
         emptyStateLabel = NSTextField(labelWithString: "")
         emptyStateLabel.translatesAutoresizingMaskIntoConstraints = false
         emptyStateLabel.font = .systemFont(ofSize: 12)
         emptyStateLabel.textColor = .tertiaryLabelColor
         emptyStateLabel.alignment = .center
-        emptyStateLabel.cell?.truncatesLastVisibleLine = false
-        emptyStateLabel.cell?.wraps = true
         emptyStateLabel.maximumNumberOfLines = 2
-        listContent.addSubview(emptyStateLabel)
+        bg.addSubview(emptyStateLabel)
 
-        let detailCard = makeCard()
-        let detailContent = detailCard.contentView!
-        bg.addSubview(detailCard)
+        let plusButton = makeToolbarButton(symbol: "plus", action: #selector(addClicked))
+        minusButton = makeToolbarButton(symbol: "minus", action: #selector(deleteClicked))
+        let toolbar = NSStackView(views: [plusButton, minusButton])
+        toolbar.orientation = .horizontal
+        toolbar.spacing = 6
+        toolbar.translatesAutoresizingMaskIntoConstraints = false
+        bg.addSubview(toolbar)
 
+        // —— 右列：灰小标签 + 系统输入框（系统设置表单语言）——
         let keyLabel = makeCaption("Key")
-        detailContent.addSubview(keyLabel)
-
+        bg.addSubview(keyLabel)
         keyField = NSTextField()
         keyField.translatesAutoresizingMaskIntoConstraints = false
         keyField.placeholderString = "输入 key（唯一标识）"
         keyField.font = .systemFont(ofSize: 13)
         keyField.delegate = self
-        detailContent.addSubview(keyField)
+        bg.addSubview(keyField)
 
         let contentLabel = makeCaption("内容")
-        detailContent.addSubview(contentLabel)
+        bg.addSubview(contentLabel)
+
+        let editorBox = NSView()
+        editorBox.wantsLayer = true
+        editorBox.layer?.cornerRadius = 6
+        editorBox.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
+        editorBox.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.5).cgColor
+        editorBox.layer?.borderWidth = 1
+        editorBox.translatesAutoresizingMaskIntoConstraints = false
+        bg.addSubview(editorBox)
 
         let contentScroll = NSScrollView()
         contentScroll.translatesAutoresizingMaskIntoConstraints = false
@@ -107,30 +128,17 @@ final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSo
         contentField.isEditable = true
         contentField.isRichText = false
         contentField.allowsUndo = true
+        contentField.delegate = self
         contentField.font = .systemFont(ofSize: 13)
         contentField.backgroundColor = .clear
         contentField.autoresizingMask = [.width]
-        contentField.textContainerInset = NSSize(width: 6, height: 6)
+        contentField.textContainerInset = NSSize(width: 8, height: 8)
         contentField.textContainer?.widthTracksTextView = true
         contentScroll.documentView = contentField
-        detailContent.addSubview(contentScroll)
+        editorBox.addSubview(contentScroll)
 
-        let addButton = makeButton(symbol: "plus", label: "新增", action: #selector(addClicked))
-        deleteButton = makeButton(symbol: "minus", label: "删除", action: #selector(deleteClicked))
-        copyButton = makeButton(symbol: "doc.on.doc", label: "复制", action: #selector(copyClicked))
-        let saveButton = makeButton(symbol: "checkmark", label: "保存", action: #selector(saveClicked), accent: true)
-        saveButton.keyEquivalent = "\r"
-
-        let leftButtons = NSStackView(views: [addButton, deleteButton, copyButton])
-        leftButtons.orientation = .horizontal
-        leftButtons.spacing = 8
-        leftButtons.translatesAutoresizingMaskIntoConstraints = false
-        detailContent.addSubview(leftButtons)
-
-        saveButton.translatesAutoresizingMaskIntoConstraints = false
-        detailContent.addSubview(saveButton)
-
-        let pad: CGFloat = 16
+        let pad: CGFloat = 20
+        let listWidth: CGFloat = 232
         NSLayoutConstraint.activate([
             bg.leadingAnchor.constraint(equalTo: leadingAnchor),
             bg.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -139,51 +147,42 @@ final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSo
 
             searchField.topAnchor.constraint(equalTo: bg.topAnchor, constant: 16),
             searchField.leadingAnchor.constraint(equalTo: bg.leadingAnchor, constant: pad),
-            searchField.trailingAnchor.constraint(equalTo: bg.trailingAnchor, constant: -pad),
-            searchField.heightAnchor.constraint(equalToConstant: 28),
+            searchField.widthAnchor.constraint(equalToConstant: listWidth),
 
-            listCard.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 12),
-            listCard.leadingAnchor.constraint(equalTo: bg.leadingAnchor, constant: pad),
-            listCard.widthAnchor.constraint(equalToConstant: 270),
-            listCard.bottomAnchor.constraint(equalTo: bg.bottomAnchor, constant: -pad),
+            scrollView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 8),
+            scrollView.leadingAnchor.constraint(equalTo: searchField.leadingAnchor),
+            scrollView.widthAnchor.constraint(equalToConstant: listWidth),
+            scrollView.bottomAnchor.constraint(equalTo: toolbar.topAnchor, constant: -8),
 
-            scrollView.topAnchor.constraint(equalTo: listContent.topAnchor, constant: 6),
-            scrollView.leadingAnchor.constraint(equalTo: listContent.leadingAnchor, constant: 6),
-            scrollView.trailingAnchor.constraint(equalTo: listContent.trailingAnchor, constant: -6),
-            scrollView.bottomAnchor.constraint(equalTo: listContent.bottomAnchor, constant: -6),
+            emptyStateLabel.centerXAnchor.constraint(equalTo: scrollView.centerXAnchor),
+            emptyStateLabel.centerYAnchor.constraint(equalTo: scrollView.centerYAnchor),
+            emptyStateLabel.leadingAnchor.constraint(greaterThanOrEqualTo: scrollView.leadingAnchor, constant: 12),
+            emptyStateLabel.trailingAnchor.constraint(lessThanOrEqualTo: scrollView.trailingAnchor, constant: -12),
 
-            emptyStateLabel.centerXAnchor.constraint(equalTo: listContent.centerXAnchor),
-            emptyStateLabel.centerYAnchor.constraint(equalTo: listContent.centerYAnchor),
-            emptyStateLabel.leadingAnchor.constraint(greaterThanOrEqualTo: listContent.leadingAnchor, constant: 12),
-            emptyStateLabel.trailingAnchor.constraint(lessThanOrEqualTo: listContent.trailingAnchor, constant: -12),
+            toolbar.leadingAnchor.constraint(equalTo: searchField.leadingAnchor),
+            toolbar.bottomAnchor.constraint(equalTo: bg.bottomAnchor, constant: -16),
 
-            detailCard.topAnchor.constraint(equalTo: listCard.topAnchor),
-            detailCard.leadingAnchor.constraint(equalTo: listCard.trailingAnchor, constant: 12),
-            detailCard.trailingAnchor.constraint(equalTo: bg.trailingAnchor, constant: -pad),
-            detailCard.bottomAnchor.constraint(equalTo: listCard.bottomAnchor),
-
-            keyLabel.topAnchor.constraint(equalTo: detailContent.topAnchor, constant: pad),
-            keyLabel.leadingAnchor.constraint(equalTo: detailContent.leadingAnchor, constant: pad),
-            keyLabel.trailingAnchor.constraint(equalTo: detailContent.trailingAnchor, constant: -pad),
+            keyLabel.topAnchor.constraint(equalTo: bg.topAnchor, constant: 20),
+            keyLabel.leadingAnchor.constraint(equalTo: scrollView.trailingAnchor, constant: 28),
+            keyLabel.trailingAnchor.constraint(equalTo: bg.trailingAnchor, constant: -pad),
 
             keyField.topAnchor.constraint(equalTo: keyLabel.bottomAnchor, constant: 6),
             keyField.leadingAnchor.constraint(equalTo: keyLabel.leadingAnchor),
             keyField.trailingAnchor.constraint(equalTo: keyLabel.trailingAnchor),
 
-            contentLabel.topAnchor.constraint(equalTo: keyField.bottomAnchor, constant: 14),
+            contentLabel.topAnchor.constraint(equalTo: keyField.bottomAnchor, constant: 18),
             contentLabel.leadingAnchor.constraint(equalTo: keyLabel.leadingAnchor),
             contentLabel.trailingAnchor.constraint(equalTo: keyLabel.trailingAnchor),
 
-            contentScroll.topAnchor.constraint(equalTo: contentLabel.bottomAnchor, constant: 6),
-            contentScroll.leadingAnchor.constraint(equalTo: keyLabel.leadingAnchor),
-            contentScroll.trailingAnchor.constraint(equalTo: keyLabel.trailingAnchor),
-            contentScroll.bottomAnchor.constraint(equalTo: leftButtons.topAnchor, constant: -14),
+            editorBox.topAnchor.constraint(equalTo: contentLabel.bottomAnchor, constant: 6),
+            editorBox.leadingAnchor.constraint(equalTo: keyLabel.leadingAnchor),
+            editorBox.trailingAnchor.constraint(equalTo: keyLabel.trailingAnchor),
+            editorBox.bottomAnchor.constraint(equalTo: bg.bottomAnchor, constant: -pad),
 
-            leftButtons.leadingAnchor.constraint(equalTo: keyLabel.leadingAnchor),
-            leftButtons.bottomAnchor.constraint(equalTo: detailContent.bottomAnchor, constant: -pad),
-
-            saveButton.trailingAnchor.constraint(equalTo: keyLabel.trailingAnchor),
-            saveButton.bottomAnchor.constraint(equalTo: detailContent.bottomAnchor, constant: -pad),
+            contentScroll.topAnchor.constraint(equalTo: editorBox.topAnchor),
+            contentScroll.leadingAnchor.constraint(equalTo: editorBox.leadingAnchor),
+            contentScroll.trailingAnchor.constraint(equalTo: editorBox.trailingAnchor),
+            contentScroll.bottomAnchor.constraint(equalTo: editorBox.bottomAnchor),
         ])
 
         updateButtonStates()
@@ -192,34 +191,29 @@ final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSo
 
     // MARK: - UI 辅助
 
-    private func makeCard() -> NSBox {
-        let box = NSBox()
-        box.boxType = .custom
-        box.cornerRadius = 12
-        box.fillColor = NSColor.controlBackgroundColor.withAlphaComponent(0.35)
-        box.contentViewMargins = NSSize(width: 0, height: 0)
-        box.translatesAutoresizingMaskIntoConstraints = false
-        return box
-    }
-
     private func makeCaption(_ text: String) -> NSTextField {
         let label = NSTextField(labelWithString: text)
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .systemFont(ofSize: 11, weight: .medium)
+        label.font = .systemFont(ofSize: 11)
         label.textColor = .secondaryLabelColor
         return label
     }
 
-    private func makeButton(symbol: String, label: String, action: Selector, accent: Bool = false) -> NSButton {
+    /// 系统设置式小图标按钮（＋/－）。
+    private func makeToolbarButton(symbol: String, action: Selector) -> NSButton {
         let button = NSButton()
         button.translatesAutoresizingMaskIntoConstraints = false
-        button.title = label
-        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
-        button.imagePosition = .imageLeading
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: symbol)
+        image?.isTemplate = true
+        button.image = image
+        button.isBordered = true
+        button.bezelStyle = .texturedRounded
+        button.controlSize = .small
+        button.contentTintColor = .secondaryLabelColor
         button.target = self
         button.action = action
-        button.bezelStyle = accent ? .rounded : .recessed
-        button.contentTintColor = accent ? .controlAccentColor : .secondaryLabelColor
+        button.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 22).isActive = true
         return button
     }
 
@@ -234,7 +228,7 @@ final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSo
 
     private func updateEmptyState() {
         if manager.snippets.isEmpty {
-            emptyStateLabel.stringValue = "暂无片段\n点击「+ 新增」创建"
+            emptyStateLabel.stringValue = "暂无片段\n点按 ＋ 新增"
             emptyStateLabel.isHidden = false
         } else if filteredSnippets.isEmpty {
             emptyStateLabel.stringValue = "未找到匹配的片段"
@@ -245,19 +239,38 @@ final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSo
     }
 
     private func updateButtonStates() {
-        let hasSelection = selectedSnippet != nil
-        copyButton.isEnabled = hasSelection
-        deleteButton.isEnabled = hasSelection
+        minusButton.isEnabled = selectedSnippet != nil
     }
 
-    // MARK: - 搜索
+    // MARK: - 搜索与自动保存
 
-    func controlTextDidChange(_ object: Notification) {
-        guard object.object as? NSSearchField === searchField else { return }
-        reloadTable()
+    func controlTextDidChange(_ obj: Notification) {
+        if obj.object as? NSSearchField === searchField {
+            reloadTable()
+            return
+        }
+        if obj.object as? NSTextField === keyField {
+            scheduleAutosave()
+        }
     }
 
-    // MARK: - 按钮操作
+    func textDidChange(_ notification: Notification) {
+        if notification.object as? NSTextView === contentField {
+            scheduleAutosave()
+        }
+    }
+
+    /// 编辑防抖自动保存（400ms 静默后落盘；⌘S 走 saveNow 立即）。
+    private func scheduleAutosave() {
+        autosaveWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.saveNow(manual: false)
+        }
+        autosaveWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: item)
+    }
+
+    // MARK: - 操作
 
     @objc private func addClicked() {
         tableView.deselectAll(nil)
@@ -278,45 +291,29 @@ final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSo
         updateButtonStates()
     }
 
-    @objc private func saveClicked() {
+    /// 保存：新建或更新。manual = ⌘S（空 key 提示）；自动保存空 key 静默跳过。
+    private func saveNow(manual: Bool) {
         let key = keyField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let content = contentField.string
+        guard !key.isEmpty || selectedSnippet != nil else {
+            if manual { NSSound.beep() }
+            return
+        }
         guard !key.isEmpty else {
-            NSSound.beep()
+            if manual { NSSound.beep() }
             return
         }
         if let snippet = selectedSnippet {
             if !manager.update(id: snippet.id, key: key, content: content) {
-                NSSound.beep()
+                if manual { NSSound.beep() }
             }
-        } else {
-            if let added = manager.add(key: key, content: content) {
-                selectedSnippet = added
-            } else {
-                NSSound.beep()
-            }
+        } else if let added = manager.add(key: key, content: content) {
+            selectedSnippet = added
+            updateButtonStates()
+        } else if manual {
+            NSSound.beep()
         }
         reloadTable()
-        updateButtonStates()
-    }
-
-    @objc private func copyClicked() {
-        guard let snippet = selectedSnippet else { return }
-        _ = manager.copyToPasteboard(forKey: snippet.key)
-        flashCopyButton()
-    }
-
-    private func flashCopyButton() {
-        let originalTitle = copyButton.title
-        let originalImage = copyButton.image
-        copyButton.title = "已复制"
-        copyButton.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "已复制")
-        copyButton.contentTintColor = .systemGreen
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
-            self?.copyButton.title = originalTitle
-            self?.copyButton.image = originalImage
-            self?.copyButton.contentTintColor = .secondaryLabelColor
-        }
     }
 
     @objc private func tableDoubleClicked() {
@@ -348,6 +345,9 @@ final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSo
             updateButtonStates()
             return
         }
+        // 切换选中即落盘上一条的防抖编辑
+        autosaveWorkItem?.cancel()
+        saveNow(manual: false)
         let snippet = filteredSnippets[row]
         selectedSnippet = snippet
         keyField.stringValue = snippet.key

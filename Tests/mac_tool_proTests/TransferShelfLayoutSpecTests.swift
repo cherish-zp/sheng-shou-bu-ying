@@ -19,7 +19,7 @@ final class TransferShelfLayoutSpecTests: XCTestCase {
 
     /// 条目图标尺寸常量（此前 24 内联两处）。
     func test_itemIconSize() {
-        XCTAssertEqual(TransferShelfLayoutSpec.itemIconSize, 32, accuracy: 0.1)
+        XCTAssertEqual(TransferShelfLayoutSpec.itemIconSize, 24, accuracy: 0.1)
     }
 
     func test_fadeDurations() {
@@ -113,7 +113,8 @@ final class TransferShelfLayoutSpecTests: XCTestCase {
     }
 
     func test_itemCornerRadius() {
-        XCTAssertEqual(TransferShelfLayoutSpec.itemCornerRadius, 12, accuracy: 0.1)
+        XCTAssertEqual(TransferShelfLayoutSpec.itemCornerRadius, 8, accuracy: 0.1,
+                       "行卡更小，圆角相应收敛")
     }
 
     func test_itemClearButtonSize() {
@@ -131,10 +132,10 @@ final class TransferShelfLayoutSpecTests: XCTestCase {
 
     // MARK: - 卡片横向流（换行、无滚动）
 
-    func test_cardSizeIsSquare() {
-        XCTAssertEqual(TransferShelfLayoutSpec.cardSize.width,
-                       TransferShelfLayoutSpec.cardSize.height, accuracy: 0.1)
-        XCTAssertEqual(TransferShelfLayoutSpec.cardSize.width, 84, accuracy: 0.1)
+    func test_cardSizeIsCompactRowCard() {
+        XCTAssertEqual(TransferShelfLayoutSpec.cardSize.width, 170, accuracy: 0.1)
+        XCTAssertEqual(TransferShelfLayoutSpec.cardSize.height, 44, accuracy: 0.1,
+                       "Apple 列表条目高度：紧凑行卡，图标文字一行读清")
     }
 
     func test_cardsPerRow_fitsWideScreen() {
@@ -143,8 +144,8 @@ final class TransferShelfLayoutSpecTests: XCTestCase {
     }
 
     func test_cardsPerRow_wrapsOnNarrowScreen() {
-        // 500 屏：可用 428；(428+10)/94=4.6 → 4 张一行
-        XCTAssertEqual(TransferShelfLayoutSpec.cardsPerRow(itemCount: 9, screenWidth: 500), 4)
+        // 500 屏：可用 428；(428+10)/180=2.4 → 2 张一行
+        XCTAssertEqual(TransferShelfLayoutSpec.cardsPerRow(itemCount: 9, screenWidth: 500), 2)
     }
 
     func test_cardsPerRow_atLeastOne() {
@@ -171,14 +172,14 @@ final class TransferShelfLayoutSpecTests: XCTestCase {
 
     func test_panelSize_widthHugsColumns() {
         let size = TransferShelfLayoutSpec.panelSize(itemCount: 3, screenWidth: 1512)
-        let expectedW = CGFloat(3 * 84 + 2 * 10) + 2 * TransferShelfLayoutSpec.panelPadding
+        let expectedW = CGFloat(3 * 170 + 2 * 10) + 2 * TransferShelfLayoutSpec.panelPadding
         XCTAssertEqual(size.width, expectedW, accuracy: 0.1, "宽度随列数拉长")
     }
 
     func test_panelSize_multiRowGrowsWithoutCap() {
-        // 500 宽屏 9 项 → 4 张一行 → 3 行；高度不封顶
+        // 500 宽屏 9 项 → 2 张一行 → 5 行；高度不封顶
         let size = TransferShelfLayoutSpec.panelSize(itemCount: 9, screenWidth: 500)
-        let content = CGFloat(3 * 84 + 2 * 10)
+        let content = CGFloat(5 * 44 + 4 * 10)
         let expectedH = TransferShelfLayoutSpec.headerHeight
             + TransferShelfLayoutSpec.contentTopGap + content
             + TransferShelfLayoutSpec.panelPadding

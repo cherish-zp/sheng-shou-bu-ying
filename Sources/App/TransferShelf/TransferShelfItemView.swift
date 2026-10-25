@@ -65,8 +65,7 @@ final class TransferShelfItemView: NSView {
         addSubview(iconView)
 
         nameLabel.stringValue = item.name
-        nameLabel.font = .systemFont(ofSize: 11, weight: .medium)
-        nameLabel.alignment = .center
+        nameLabel.font = .systemFont(ofSize: 13, weight: .medium)
         nameLabel.textColor = .labelColor
         nameLabel.maximumNumberOfLines = 1
         nameLabel.lineBreakMode = .byTruncatingMiddle
@@ -96,25 +95,24 @@ final class TransferShelfItemView: NSView {
         removeButton.translatesAutoresizingMaskIntoConstraints = false
         addSubview(removeButton)
 
-        // 卡片布局：图标居中偏上，名称单行居中在下；删除按钮悬浮右上角
+        // 行卡布局（Apple 列表语言）：图标垂直居中在左，名称单行居中，删除按钮右端
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.cardSize.width),
             heightAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.cardSize.height),
 
-            iconView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            iconView.topAnchor.constraint(equalTo: topAnchor, constant: 12),
+            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
             iconView.widthAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.itemIconSize),
             iconView.heightAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.itemIconSize),
 
-            nameLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
-            nameLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 5),
-            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -5),
-            nameLabel.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: 8),
+            nameLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 8),
+            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: removeButton.leadingAnchor, constant: -4),
+            nameLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
 
             removeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
-            removeButton.topAnchor.constraint(equalTo: topAnchor, constant: 4),
-            removeButton.widthAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.itemClearButtonSize + 4),
-            removeButton.heightAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.itemClearButtonSize + 4),
+            removeButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            removeButton.widthAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.itemClearButtonSize),
+            removeButton.heightAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.itemClearButtonSize),
         ])
 
         addTrackingArea(NSTrackingArea(
