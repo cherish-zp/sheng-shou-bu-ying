@@ -301,14 +301,6 @@ final class TransferShelfShelfView: NSView {
         layer?.borderColor = NSColor.white.withAlphaComponent(0.10).cgColor
     }
 
-    /// 提取 pasteboard 中的文件 URL（兼容旧调用方）。
-    static func fileURLs(from sender: NSDraggingInfo) -> [URL] {
-        guard let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else {
-            return []
-        }
-        return urls.filter { $0.isFileURL }
-    }
-
     @objc private func clearAllClicked() {
         onClearAll?()
     }

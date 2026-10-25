@@ -60,4 +60,53 @@ final class ColorPixelBufferTests: XCTestCase {
         XCTAssertEqual(color.red, 10.0 / 255.0, accuracy: 0.01)
         XCTAssertEqual(color.blue, 30.0 / 255.0, accuracy: 0.01)
     }
+    // MARK: - 小区域裁剪（取色器按需采样，替代整屏 RGBA 常驻）
+
+    /// 4x4 每像素不同的确定性图（i*4+j 编码进 R）。
+    private func make4x4Image() -> CGImage? {
+        var pixels = [UInt8](repeating: 255, count: 4 * 4 * 4)
+        for i in 0..<16 {
+            pixels[i * 4] = UInt8(i * 15)
+        }
+        let ctx = CGContext(data: &pixels, width: 4, height: 4, bitsPerComponent: 8,
+                            bytesPerRow: 4 * 4, space: CGColorSpaceCreateDeviceRGB(),
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        return ctx?.makeImage()
+    }
+
+    func test_crop_readsSamePixelsAsFullBuffer() throws {
+        let image = try XCTUnwrap(make4x4Image())
+        let full = try XCTUnwrap(ColorPixelBuffer(image: image))
+        // 裁剪 (1,1)-(3,3)：左上原点、含端点
+        let cropped = try XCTUnwrap(ColorPixelBuffer(image: image, cropRect: CGRect(x: 1, y: 1, width: 2, height: 2)))
+        XCTAssertEqual(cropped.width, 2)
+        XCTAssertEqual(cropped.height, 2)
+        for (x, y) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            let fromFull = try XCTUnwrap(full.rgba(atX: x + 1, y: y + 1))
+            let fromCrop = try XCTUnwrap(cropped.rgba(atX: x, y: y))
+            XCTAssertEqual(fromFull.red, fromCrop.red, accuracy: 0.01, "裁剪 (\(x),\(y)) 应与整图同址一致")
+        }
+    }
+
+    func test_regionBounds_coversPointsAndCursor_andClamps() {
+        let size = CGSize(width: 3456, height: 2234)
+        // 光标贴左上角、网格点最远到 (36, 36)：区域被夹到图像内
+        let rect = ColorPixelBuffer.regionBounds(
+            points: [CGPoint(x: 36, y: 36)], cursorPixel: CGPoint(x: 0.4, y: 0.4), imageSize: size)
+        XCTAssertEqual(rect, CGRect(x: 0, y: 0, width: 37, height: 37), "含端点：0...36 共 37 像素")
+        // 中央光标：区域对称覆盖
+        let center = ColorPixelBuffer.regionBounds(
+            points: [CGPoint(x: 1716, y: 1117)], cursorPixel: CGPoint(x: 1700, y: 1100), imageSize: size)
+        XCTAssertEqual(center, CGRect(x: 1700, y: 1100, width: 17, height: 18))
+        // 光标贴右下角：夹到边界
+        let corner = ColorPixelBuffer.regionBounds(
+            points: [CGPoint(x: 3400, y: 2200)], cursorPixel: CGPoint(x: 3455.6, y: 2233.6), imageSize: size)
+        XCTAssertEqual(corner?.maxX, 3456, "CGRect.max 为排他边界：最后一个像素下标 3455")
+        XCTAssertEqual(corner?.maxY, 2234)
+    }
+
+    func test_regionBounds_emptyPoints_returnsCursorCell() {
+        let rect = ColorPixelBuffer.regionBounds(points: [], cursorPixel: CGPoint(x: 10, y: 20), imageSize: CGSize(width: 100, height: 100))
+        XCTAssertEqual(rect, CGRect(x: 10, y: 20, width: 1, height: 1))
+    }
 }

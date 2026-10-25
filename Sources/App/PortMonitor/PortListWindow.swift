@@ -158,7 +158,10 @@ final class PortListWindowController: NSObject, NSWindowDelegate, NSTableViewDat
     @objc private func refreshClicked() { refresh() }
 
     @objc private func modeChanged() {
-        filter.listenOnly = listenToggle.selectedSegment == 0
+        let listenOnly = listenToggle.selectedSegment == 0
+        guard listenOnly != filter.listenOnly else { return }   // 同档重复点击不重查
+        filter.listenOnly = listenOnly   // didSet 先做本地过滤给即时反馈
+        refresh()                        // 切档必须按新模式重新执行 lsof（数据集不同）
     }
 
     /// 查询（后台 lsof → 主线程解析）。打开窗口与手动刷新共用。
@@ -233,10 +236,12 @@ final class PortListWindowController: NSObject, NSWindowDelegate, NSTableViewDat
         let identifier = tableColumn?.identifier.rawValue ?? ""
 
         if identifier == "操作" {
-            let button = NSButton(title: "结束", target: self, action: #selector(killClicked(_:)))
+            // 携带条目本身而非行号：表格刷新瞬间旧按钮若仍可点，行号会错位取到
+            // 别的进程；按用户看到的条目执行才不会错杀
+            let button = KillButton(title: "结束", target: self, action: #selector(killClicked(_:)))
             button.bezelStyle = .rounded
             button.controlSize = .small
-            button.tag = row
+            button.entry = entry
             button.isEnabled = entry.isCurrentUser
             button.toolTip = entry.isCurrentUser ? "结束该进程（SIGTERM → 2 秒后 SIGKILL）" : "非当前用户进程，需 root"
             return button
@@ -282,10 +287,14 @@ final class PortListWindowController: NSObject, NSWindowDelegate, NSTableViewDat
     }
 
     @objc private func killClicked(_ sender: NSButton) {
-        let row = sender.tag
-        guard row >= 0, row < filteredEntries.count else { return }
-        confirmAndKill(filteredEntries[row])
+        guard let entry = (sender as? KillButton)?.entry else { return }
+        confirmAndKill(entry)
     }
+}
+
+/// 行内「结束」按钮：携带目标条目（防刷新后行号错位错杀）。
+private final class KillButton: NSButton {
+    var entry: PortProcessEntry?
 }
 
 // MARK: - 搜索回调

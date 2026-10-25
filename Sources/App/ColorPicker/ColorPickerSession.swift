@@ -1,9 +1,10 @@
 import AppKit
 import CoreGraphics
 
-/// 取色会话控制器：串联「预捕获整屏位图 -> 全屏压暗覆盖层 -> 放大镜跟随 -> 单击复制 -> ESC 退出」。
-/// 性能关键：进入时对鼠标所在屏一次性预捕获（CGDisplayCreateImage -> ColorPixelBuffer），
-/// 放大镜与取色全部读该位图内存，零重复采集开销；跟随鼠标跨屏时对新屏惰性捕获（每屏一次）。
+/// 取色会话控制器：串联「按屏持有捕获图 -> 全屏压暗覆盖层 -> 放大镜跟随 -> 单击复制 -> ESC 退出」。
+/// 性能关键：每屏一次性 CGDisplayCreateImage 只保留 CGImage（IOSurface 惰性背书），
+/// 每次鼠标移动把 ~40×40px 采样窗绘入小缓冲再读（ColorPixelBuffer.cropRect）——
+/// 免去整屏 RGBA 常驻（5K 屏 ~59MB/屏）；跟随鼠标跨屏时对新屏惰性捕获（每屏一次）。
 /// 已知假设：屏幕静态场景下取色值即真实值；屏幕内容变化不自动重捕（见交付报告）。
 final class ColorPickerSession: NSObject {
 
@@ -25,11 +26,11 @@ final class ColorPickerSession: NSObject {
     private var magnifierWindow: ColorMagnifierWindow?
     private var escMonitor: Any?
 
-    /// 每屏预捕获缓冲（惰性填充）：key = displayID。
+    /// 每屏捕获图（惰性填充）：key = displayID。只留 CGImage，不预解码整屏 RGBA。
     private struct ScreenBuffer {
         let screen: NSScreen
         let displayID: CGDirectDisplayID
-        let buffer: ColorPixelBuffer
+        let image: CGImage
     }
     private var screenBuffers: [CGDirectDisplayID: ScreenBuffer] = [:]
 
@@ -132,11 +133,11 @@ final class ColorPickerSession: NSObject {
         let rgb: String
     }
 
-    /// 从预捕获位图取样：屏幕点 → 位图像素（GridMath 换算含 scaleFactor 与 y 翻转）→ 读内存。
+    /// 取样：屏幕点 → 位图像素（GridMath 换算含 scaleFactor 与 y 翻转）→ 采样窗小缓冲读取。
     private func sampleColor(at location: NSPoint) -> SampleResult? {
         guard let screen = screen(containing: location),
               let entry = buffer(for: screen) else { return nil }
-        let imageSize = CGSize(width: entry.buffer.width, height: entry.buffer.height)
+        let imageSize = CGSize(width: entry.image.width, height: entry.image.height)
         let cursorPixel = ColorMagnifierGridMath.cursorPixel(
             cursorInScreen: location, screenFrame: screen.frame, imagePixelSize: imageSize)
         let points = ColorMagnifierGridMath.samplePoints(
@@ -144,15 +145,21 @@ final class ColorPickerSession: NSObject {
             magnification: ColorPickerSession.magnification,
             magnifierRadiusInPoints: ColorPickerSession.magnifierRadiusInPoints,
             backingScale: screen.backingScaleFactor)
-        guard !points.isEmpty else { return nil }
+        guard !points.isEmpty,
+              let region = ColorPixelBuffer.regionBounds(
+                points: points.flatMap { $0 }, cursorPixel: cursorPixel, imageSize: imageSize),
+              let window = ColorPixelBuffer(image: entry.image, cropRect: region) else { return nil }
+        func read(_ p: CGPoint) -> (red: Double, green: Double, blue: Double, alpha: Double)? {
+            window.rgba(atX: Int(p.x.rounded()) - Int(region.minX),
+                        y: Int(p.y.rounded()) - Int(region.minY))
+        }
         let gridColors: [[NSColor?]] = points.map { row in
             row.map { point in
-                guard let rgba = entry.buffer.rgba(atX: Int(point.x), y: Int(point.y)) else { return nil }
+                guard let rgba = read(point) else { return nil }
                 return NSColor(calibratedRed: rgba.red, green: rgba.green, blue: rgba.blue, alpha: 1)
             }
         }
-        let cursorRGBA = entry.buffer.rgba(atX: Int(cursorPixel.x.rounded()), y: Int(cursorPixel.y.rounded()))
-        guard let rgba = cursorRGBA else { return nil }
+        guard let rgba = read(cursorPixel) else { return nil }
         let hex = HexColorFormatter.hexString(red: rgba.red, green: rgba.green, blue: rgba.blue)
         let rgb = HexColorFormatter.rgbString(red: rgba.red, green: rgba.green, blue: rgba.blue)
         let cursorColor = NSColor(calibratedRed: rgba.red, green: rgba.green, blue: rgba.blue, alpha: 1)
@@ -166,7 +173,7 @@ final class ColorPickerSession: NSObject {
         _ = buffer(for: screen)
     }
 
-    /// 惰性获取屏缓冲：缺失时对该屏一次性 CGDisplayCreateImage 并转 RGBA 内存。
+    /// 惰性获取屏捕获图：缺失时对该屏一次性 CGDisplayCreateImage（不做整屏解码）。
     private func buffer(for screen: NSScreen) -> ScreenBuffer? {
         guard let displayID = displayID(of: screen) else { return nil }
         if let existing = screenBuffers[displayID] { return existing }
@@ -174,13 +181,9 @@ final class ColorPickerSession: NSObject {
             DiagLog.write("ColorPickerSession: CGDisplayCreateImage failed for \(displayID) (screen recording permission?)")
             return nil
         }
-        guard let pixelBuffer = ColorPixelBuffer(image: image) else {
-            DiagLog.write("ColorPickerSession: pixel buffer init failed for \(displayID)")
-            return nil
-        }
-        let entry = ScreenBuffer(screen: screen, displayID: displayID, buffer: pixelBuffer)
+        let entry = ScreenBuffer(screen: screen, displayID: displayID, image: image)
         screenBuffers[displayID] = entry
-        DiagLog.write("ColorPickerSession: primed buffer display=\(displayID) pixels=\(pixelBuffer.width)x\(pixelBuffer.height)")
+        DiagLog.write("ColorPickerSession: primed capture display=\(displayID) pixels=\(image.width)x\(image.height)")
         return entry
     }
 
