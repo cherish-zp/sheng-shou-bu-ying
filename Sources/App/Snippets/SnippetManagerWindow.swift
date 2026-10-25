@@ -73,7 +73,10 @@ final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSo
         tableView.doubleAction = #selector(tableDoubleClicked)
         tableView.headerView = nil
         tableView.backgroundColor = .clear
-        tableView.rowHeight = 44
+        // 行高 52：两行（key 13pt + 预览 11pt）+ 6/4 边距 ≈ 42，留足余量——
+        // 44 时约束过约束（48>44），autolayout 打破哪条因环境而异，真实表格里
+        // 表现为预览行被压扁、字只见上半截。
+        tableView.rowHeight = 52
         tableView.intercellSpacing = NSSize(width: 0, height: 2)
         let col = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("snippet"))
         col.resizingMask = .autoresizingMask
@@ -389,7 +392,7 @@ final class SnippetManagerWindow: NSWindow, NSWindowDelegate {
 
 // MARK: - 列表单元格
 
-private final class SnippetCellView: NSTableCellView {
+final class SnippetCellView: NSTableCellView {
 
     private let keyLabel = NSTextField(labelWithString: "")
     private let previewLabel = NSTextField(labelWithString: "")
@@ -410,14 +413,14 @@ private final class SnippetCellView: NSTableCellView {
         addSubview(previewLabel)
 
         NSLayoutConstraint.activate([
-            keyLabel.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            keyLabel.topAnchor.constraint(equalTo: topAnchor, constant: 6),
             keyLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             keyLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
 
             previewLabel.topAnchor.constraint(equalTo: keyLabel.bottomAnchor, constant: 2),
             previewLabel.leadingAnchor.constraint(equalTo: keyLabel.leadingAnchor),
             previewLabel.trailingAnchor.constraint(equalTo: keyLabel.trailingAnchor),
-            previewLabel.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -8),
+            previewLabel.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -4),
         ])
     }
 
