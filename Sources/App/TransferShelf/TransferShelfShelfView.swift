@@ -26,6 +26,8 @@ final class TransferShelfShelfView: NSView {
     var hoveredItemID: UUID?
 
     private var items: [TransferItem] = []
+    /// 当前屏幕可见宽度（控制器在布局前同步；决定一行卡片数与换行）。
+    var currentScreenWidth: CGFloat = NSScreen.main?.frame.width ?? 1512
     private let effectView = NSVisualEffectView()
     private let titleLabel = NSTextField(labelWithString: "中转站")
     private let countLabel = NSTextField(labelWithString: "")
@@ -80,29 +82,13 @@ final class TransferShelfShelfView: NSView {
         clearButton.translatesAutoresizingMaskIntoConstraints = false
         addSubview(clearButton)
 
+        // 卡片横向流：竖向 stack 装「行」，每行是横向 stack 装卡片。
+        // 不用滚动——面板尺寸随行数拉长（TransferShelfLayoutSpec.panelSize），溢出靠换行。
         stackView.orientation = .vertical
         stackView.spacing = TransferShelfLayoutSpec.itemSpacing
+        stackView.alignment = .centerX
         stackView.translatesAutoresizingMaskIntoConstraints = false
-
-        let scrollView = NSScrollView()
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
-        scrollView.borderType = .noBorder
-        scrollView.drawsBackground = false
-        scrollView.documentView = stackView
-        addSubview(scrollView)
-
-        // documentView 必须钉到 clip 视图:stackView 关闭了 autoresizing 且
-        // 没有其他约束时 frame 恒为 0×0,渲染进来的条目全部不可见(拖入后
-        // 面板永远空白)。底部用 >=,内容超出可视高度时才出现滚动。
-        let clipView = scrollView.contentView
-        NSLayoutConstraint.activate([
-            stackView.leadingAnchor.constraint(equalTo: clipView.leadingAnchor),
-            stackView.trailingAnchor.constraint(equalTo: clipView.trailingAnchor),
-            stackView.topAnchor.constraint(equalTo: clipView.topAnchor),
-            stackView.bottomAnchor.constraint(greaterThanOrEqualTo: clipView.bottomAnchor),
-        ])
+        addSubview(stackView)
 
         // 空态：图标 + 主文案 + 辅助文案，整体居中（无手调偏移）
         let emptySymbol = NSImage(systemSymbolName: "tray.and.arrow.down",
@@ -148,10 +134,12 @@ final class TransferShelfShelfView: NSView {
             clearButton.widthAnchor.constraint(equalToConstant: 16),
             clearButton.heightAnchor.constraint(equalToConstant: 16),
 
-            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: topAnchor, constant: TransferShelfLayoutSpec.headerHeight),
-            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -TransferShelfLayoutSpec.panelPadding),
+            stackView.topAnchor.constraint(equalTo: topAnchor,
+                                           constant: TransferShelfLayoutSpec.headerHeight + TransferShelfLayoutSpec.contentTopGap),
+            stackView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -TransferShelfLayoutSpec.panelPadding),
+            stackView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            stackView.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: TransferShelfLayoutSpec.panelPadding),
+            stackView.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -TransferShelfLayoutSpec.panelPadding),
 
             emptyStack.centerXAnchor.constraint(equalTo: centerXAnchor),
             emptyStack.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -9),
@@ -175,53 +163,27 @@ final class TransferShelfShelfView: NSView {
 
     // MARK: - 尺寸
 
-    /// 面板尺寸：空态用固定空态尺寸；有条目时宽度由最长文本自适应（clamp 200–260）。
+    /// 面板尺寸（卡片横向流）：空态固定；有条目随列数/行数拉长，换行兜底不滚动。
     func preferredPanelSize() -> CGSize {
-        if items.isEmpty {
-            return CGSize(
-                width: TransferShelfLayoutSpec.emptyPanelWidth,
-                height: TransferShelfLayoutSpec.emptyPanelHeight
-            )
-        }
-        let font = NSFont.systemFont(ofSize: 12, weight: .medium)
-        let textWidths = items.map { TransferShelfLayoutSpec.itemTextWidth(for: $0.name, font: font) }
-        return CGSize(
-            width: TransferShelfLayoutSpec.panelWidth(itemTextWidths: textWidths),
-            height: TransferShelfLayoutSpec.panelHeight(itemCount: items.count)
-        )
-    }
-
-    /// 条目视图宽度跟随面板宽度（减去面板左右内边距）。
-    static func itemWidth(forPanelWidth panelWidth: CGFloat) -> CGFloat {
-        panelWidth - TransferShelfLayoutSpec.panelPadding * 2
+        TransferShelfLayoutSpec.panelSize(itemCount: items.count, screenWidth: currentScreenWidth)
     }
 
     func render(items: [TransferItem]) {
         self.items = items
         stackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
-        let itemWidth = Self.itemWidth(forPanelWidth: preferredPanelSize().width)
-        for item in items {
-            let itemView = TransferShelfItemView(item: item)
-            itemView.frame.size.width = itemWidth
-            itemView.onRemove = { [weak self] id in
-                self?.onRemove?(id)
-                self?.onInteracting?()
-            }
-            itemView.validateForDrag = { [weak self] id in
-                self?.validateForDrag?(id) ?? true
-            }
-            itemView.onQuickLook = { [weak self] item in
-                self?.openQuickLook(startingAt: item)
-            }
-            itemView.onShare = { item, anchor in
-                Self.share(item: item, from: anchor)
-            }
-            itemView.onHover = { [weak self] id in
-                self?.hoveredItemID = id
-                self?.onHoverItem?(id)
-            }
-            stackView.addArrangedSubview(itemView)
+        let perRow = TransferShelfLayoutSpec.cardsPerRow(itemCount: items.count,
+                                                         screenWidth: currentScreenWidth)
+        var index = 0
+        while index < items.count {
+            let rowEnd = min(index + perRow, items.count)
+            let rowItems = items[index..<rowEnd]
+            index = rowEnd
+            let row = NSStackView(views: rowItems.map { makeItemView(for: $0) })
+            row.orientation = .horizontal
+            row.spacing = TransferShelfLayoutSpec.itemSpacing
+            row.alignment = .centerY
+            stackView.addArrangedSubview(row)
         }
         let isEmpty = items.isEmpty
         emptyIcon.isHidden = !isEmpty
@@ -229,6 +191,29 @@ final class TransferShelfShelfView: NSView {
         emptyHintLabel.isHidden = !isEmpty
         clearButton.isHidden = isEmpty
         countLabel.stringValue = isEmpty ? "" : "· \(items.count) 项"
+    }
+
+    /// 组装卡片视图并接上交互回调（render 的每卡片装配）。
+    private func makeItemView(for item: TransferItem) -> TransferShelfItemView {
+        let itemView = TransferShelfItemView(item: item)
+        itemView.onRemove = { [weak self] id in
+            self?.onRemove?(id)
+            self?.onInteracting?()
+        }
+        itemView.validateForDrag = { [weak self] id in
+            self?.validateForDrag?(id) ?? true
+        }
+        itemView.onQuickLook = { [weak self] item in
+            self?.openQuickLook(startingAt: item)
+        }
+        itemView.onShare = { item, anchor in
+            Self.share(item: item, from: anchor)
+        }
+        itemView.onHover = { [weak self] id in
+            self?.hoveredItemID = id
+            self?.onHoverItem?(id)
+        }
+        return itemView
     }
 
     // MARK: - Quick Look 宿主

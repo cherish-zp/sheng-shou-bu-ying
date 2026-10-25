@@ -20,7 +20,6 @@ final class TransferShelfItemView: NSView {
     private let iconView = NSImageView()
     private let nameLabel = NSTextField(labelWithString: "")
     /// 副标题：file=大小+时间、text=字数、image=像素尺寸、link=相对时间。
-    private let subtitleLabel = NSTextField(labelWithString: "")
     private let removeButton = NSButton()
     // 单击 vs 拖出判定与「本次按住已开拖拽会话」标记;后者同时避免
     // 连续 mouseDragged 重复开启多个拖拽会话。
@@ -59,16 +58,15 @@ final class TransferShelfItemView: NSView {
 
     init(item: TransferItem) {
         self.item = item
-        super.init(frame: NSRect(x: 0, y: 0,
-                                 width: TransferShelfLayoutSpec.verticalItemWidth,
-                                 height: TransferShelfLayoutSpec.verticalItemHeight))
+        super.init(frame: NSRect(origin: .zero, size: TransferShelfLayoutSpec.cardSize))
 
         iconView.image = Self.icon(for: item)
         iconView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(iconView)
 
         nameLabel.stringValue = item.name
-        nameLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        nameLabel.font = .systemFont(ofSize: 11, weight: .medium)
+        nameLabel.alignment = .center
         nameLabel.textColor = .labelColor
         nameLabel.maximumNumberOfLines = 1
         nameLabel.lineBreakMode = .byTruncatingMiddle
@@ -77,14 +75,7 @@ final class TransferShelfItemView: NSView {
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(nameLabel)
 
-        subtitleLabel.stringValue = Self.subtitle(for: item)
-        subtitleLabel.font = .systemFont(ofSize: 10)
-        subtitleLabel.textColor = .secondaryLabelColor
-        subtitleLabel.maximumNumberOfLines = 1
-        subtitleLabel.lineBreakMode = .byTruncatingTail
-        subtitleLabel.cell?.truncatesLastVisibleLine = true
-        subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(subtitleLabel)
+        toolTip = "\(item.name)\n\(Self.subtitle(for: item))"
 
         wantsLayer = true
         layer?.cornerRadius = TransferShelfLayoutSpec.itemCornerRadius
@@ -105,27 +96,25 @@ final class TransferShelfItemView: NSView {
         removeButton.translatesAutoresizingMaskIntoConstraints = false
         addSubview(removeButton)
 
+        // 卡片布局：图标居中偏上，名称单行居中在下；删除按钮悬浮右上角
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.verticalItemWidth),
-            heightAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.verticalItemHeight),
+            widthAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.cardSize.width),
+            heightAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.cardSize.height),
 
-            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            iconView.topAnchor.constraint(equalTo: topAnchor, constant: 12),
             iconView.widthAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.itemIconSize),
             iconView.heightAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.itemIconSize),
 
-            nameLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 8),
-            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: removeButton.leadingAnchor, constant: -4),
-            nameLabel.bottomAnchor.constraint(equalTo: centerYAnchor, constant: -1),
+            nameLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
+            nameLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 5),
+            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -5),
+            nameLabel.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: 8),
 
-            subtitleLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
-            subtitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: removeButton.leadingAnchor, constant: -4),
-            subtitleLabel.topAnchor.constraint(equalTo: centerYAnchor, constant: 1),
-
-            removeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -TransferShelfLayoutSpec.itemClearButtonOffset),
-            removeButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-            removeButton.widthAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.itemClearButtonSize),
-            removeButton.heightAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.itemClearButtonSize),
+            removeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+            removeButton.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+            removeButton.widthAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.itemClearButtonSize + 4),
+            removeButton.heightAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.itemClearButtonSize + 4),
         ])
 
         addTrackingArea(NSTrackingArea(
@@ -140,7 +129,7 @@ final class TransferShelfItemView: NSView {
             Self.loadFileSize(for: item) { [weak self] size in
                 guard let self, let size else { return }
                 let time = TransferItemRelativeTime.string(from: item.addedAt, now: Date())
-                self.subtitleLabel.stringValue = "\(TransferItemFileSize.string(bytes: size)) · \(time)"
+                self.toolTip = "\(item.name)\n\(TransferItemFileSize.string(bytes: size)) · \(time)"
             }
         }
     }

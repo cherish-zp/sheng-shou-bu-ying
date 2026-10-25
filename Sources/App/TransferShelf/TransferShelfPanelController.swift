@@ -142,6 +142,7 @@ final class TransferShelfPanelController: NSObject {
             return
         }
         let visible = screen.visibleFrame
+        shelfView?.currentScreenWidth = visible.width
         let size = shelfView?.preferredPanelSize() ?? panel.frame.size
         let height = min(size.height, visible.height - TransferShelfLayoutSpec.topGap * 2)
         let frameSize = NSSize(width: size.width, height: height)
@@ -340,6 +341,7 @@ final class TransferShelfPanelController: NSObject {
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
         guard let screen = screen else { return panel.frame }
         let visible = screen.visibleFrame
+        shelfView?.currentScreenWidth = visible.width
         let size = shelfView?.preferredPanelSize() ?? panel.frame.size
         let height = min(size.height, visible.height - TransferShelfLayoutSpec.topGap * 2)
         return NSRect(

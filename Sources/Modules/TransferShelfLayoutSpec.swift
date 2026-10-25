@@ -3,7 +3,6 @@ import AppKit
 
 /// 文件中转站布局规格：顶部面板、条目尺寸、动画参数。
 public enum TransferShelfLayoutSpec {
-    public static let panelHeight: CGFloat = 68
     public static let itemSpacing: CGFloat = 10
     public static let panelPadding: CGFloat = 12
     public static let cornerRadius: CGFloat = 20
@@ -28,13 +27,17 @@ public enum TransferShelfLayoutSpec {
         return NSPointInRect(location, rect)
     }
 
-    /// 竖向排布：面板固定宽度与横向条目尺寸（图标左 + 文件名右）。
-    public static let verticalPanelWidth: CGFloat = 180
-    public static let verticalItemWidth: CGFloat = 156
-    public static let verticalItemHeight: CGFloat = 44
 
-    /// 面板半透明背景不透明度（自绘圆角背景，彻底消除透明直角）。
-    public static let panelBackgroundAlpha: CGFloat = 0.82
+    /// 面板发丝描边宽度与条目圆角（苹果风细节）。
+    public static let panelHairlineWidth: CGFloat = 1
+    public static let itemCornerRadius: CGFloat = 12
+
+    /// 卡片图标边长。
+    public static let itemIconSize: CGFloat = 32
+
+    /// 条目右上角单独删除按钮。
+    public static let itemClearButtonSize: CGFloat = 12
+    public static let itemClearButtonOffset: CGFloat = 2
 
     /// UI ③ 头部栏高度（标题 + 条目计数 + 清空按钮）。
     public static let headerHeight: CGFloat = 26
@@ -48,46 +51,41 @@ public enum TransferShelfLayoutSpec {
     /// UI ④ 热区拖拽提示胶囊尺寸。
     public static let hotHintSize = NSSize(width: 118, height: 28)
 
-    /// UI ① 毛玻璃材质（替代旧的半透明自绘背景；圆角裁剪由容器 layer 负责）。
+    /// UI ① 毛玻璃材质（圆角裁剪由容器 layer 负责）。
     public static let panelMaterial: NSVisualEffectView.Material = .hudWindow
 
-    /// UI ⑤ 面板宽度自适应区间（由最长条目文本决定，clamp 到此区间）。
-    public static let minPanelWidth: CGFloat = 200
-    public static let maxPanelWidth: CGFloat = 260
+    /// 卡片尺寸（图标 + 单行名称，浮引/Yoink 式方形卡片）。
+    public static let cardSize = NSSize(width: 84, height: 84)
 
-    /// 条目固定占位（图标 + 间距 + 删除按钮等非文本部分）：
-    /// 8(icon leading) + 24(icon) + 8(gap) + 4(text 右间距) + 12(clear) + 2(offset) + 8(trailing)。
-    public static let itemChromeWidth: CGFloat = 66
+    /// 面板两侧距屏幕边缘的最小留白：面板拉长也不贴边。
+    public static let screenSideMargin: CGFloat = 24
 
-    /// 条目名称文本宽度测量（供 panelWidth 计算自适应宽度）。
-    public static func itemTextWidth(for text: String, font: NSFont) -> CGFloat {
-        let attributed = NSAttributedString(string: text, attributes: [.font: font])
-        return attributed.size().width
+    /// 头部栏与卡片区之间的纵向间距。
+    public static let contentTopGap: CGFloat = 8
+
+    /// 屏幕可用宽度内一行最多容纳多少张卡片（至少 1；不超过条目数）。
+    public static func cardsPerRow(itemCount: Int, screenWidth: CGFloat) -> Int {
+        let usable = screenWidth - screenSideMargin * 2 - panelPadding * 2
+        let perRow = Int(floor((usable + itemSpacing) / (cardSize.width + itemSpacing)))
+        return max(1, min(perRow, max(1, itemCount)))
     }
 
-    /// 面板宽度 = 最长条目文本 + 条目固定占位 + 面板左右内边距，clamp 到 [min, max]。
-    public static func panelWidth(itemTextWidths: [CGFloat]) -> CGFloat {
-        guard let longest = itemTextWidths.max() else { return minPanelWidth }
-        let content = longest + itemChromeWidth + panelPadding * 2
-        return min(max(content, minPanelWidth), maxPanelWidth)
+    /// 面板尺寸（卡片横向流）：宽 = 实际列数宽度（至少空态宽，天然不超屏），
+    /// 高 = 头部 + 行数 × 卡片（不设上限——内容放不下靠换行兜底，永不滚动）。
+    public static func panelSize(itemCount: Int, screenWidth: CGFloat) -> CGSize {
+        if itemCount <= 0 {
+            return CGSize(width: emptyPanelWidth, height: emptyPanelHeight)
+        }
+        let perRow = cardsPerRow(itemCount: itemCount, screenWidth: screenWidth)
+        let columns = min(itemCount, perRow)
+        let rows = Int(ceil(Double(itemCount) / Double(perRow)))
+        let width = max(emptyPanelWidth,
+                        panelPadding * 2 + CGFloat(columns) * cardSize.width + CGFloat(columns - 1) * itemSpacing)
+        let content = CGFloat(rows) * cardSize.height + CGFloat(rows - 1) * itemSpacing
+        return CGSize(width: width,
+                      height: headerHeight + contentTopGap + content + panelPadding)
     }
 
-    /// 面板高度：头部栏 + 条目内容区（随条目数增长，封顶 maxHeight）。
-    public static func panelHeight(itemCount: Int, maxHeight: CGFloat = 400) -> CGFloat {
-        let content = verticalItemHeight * CGFloat(itemCount) + itemSpacing * CGFloat(max(0, itemCount - 1))
-        return min(headerHeight + panelPadding * 2 + content, maxHeight)
-    }
-
-    /// 面板发丝描边宽度与条目圆角（苹果风细节）。
-    public static let panelHairlineWidth: CGFloat = 1
-    public static let itemCornerRadius: CGFloat = 12
-
-    /// 条目图标边长（此前内联两处 24）。
-    public static let itemIconSize: CGFloat = 24
-
-    /// 条目右上角单独删除按钮。
-    public static let itemClearButtonSize: CGFloat = 12
-    public static let itemClearButtonOffset: CGFloat = 2
 
     /// 拖出条目时的预览图像帧（NSDraggingItem 必须设置非零 frame，否则崩溃）。
     public static let dragImageFrame: NSRect = NSRect(x: 0, y: 0, width: 64, height: 64)

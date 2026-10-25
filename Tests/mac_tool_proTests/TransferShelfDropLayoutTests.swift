@@ -1,47 +1,63 @@
 import XCTest
 import AppKit
 
-/// TDD: 文件中转站拖入后的条目渲染布局。
-/// 修复的 bug:拖入文件后面板不显示条目——stackView 作为 scrollView 的
-/// documentView,translatesAutoresizingMaskIntoConstraints = false 却没有
-/// 任何约束钉到 contentLayoutGuide,documentView 布局无定义,条目
-/// 渲染在零尺寸/越界区域里,肉眼不可见。
+/// TDD: 中转站卡片流布局——无滚动（不出现滚动条），卡片完整可见，
+/// 超宽自动换行到下一行（面板随行数拉长）。
 final class TransferShelfDropLayoutTests: XCTestCase {
 
     @MainActor
-    func test_renderedItemLiesInsideVisibleScrollArea() {
-        // 面板高度用「1 个条目 + 头部栏」的规格值：头部栏引入后旧 68pt 放不下 44pt 条目
-        let shelf = TransferShelfShelfView(frame: NSRect(x: 0, y: 0, width: 210, height: TransferShelfLayoutSpec.panelHeight(itemCount: 1)))
-        let item = TransferItem(url: URL(fileURLWithPath: "/tmp/transfer-shelf-drop-test.txt"))
-        shelf.render(items: [item])
+    func test_noScrollViewInHierarchy() {
+        let shelf = TransferShelfShelfView(frame: NSRect(origin: .zero,
+                size: TransferShelfLayoutSpec.panelSize(itemCount: 2, screenWidth: 1512)))
+        shelf.render(items: [])
         shelf.layoutSubtreeIfNeeded()
-
-        let itemViews = TransferShelfDropLayoutTests.findAll(in: shelf, of: TransferShelfItemView.self)
-        XCTAssertEqual(itemViews.count, 1, "拖入后应渲染出一个条目视图")
-
-        guard let itemView = itemViews.first else { return }
-        let visibleRect = shelf.convert(itemView.bounds, from: itemView)
-        XCTAssertGreaterThan(visibleRect.width, 0, "条目宽度必须大于 0")
-        XCTAssertGreaterThan(visibleRect.height, 0, "条目高度必须大于 0")
         XCTAssertTrue(
-            shelf.bounds.intersection(visibleRect).height >= visibleRect.height * 0.99,
-            "条目必须完整落在面板可视区域内: itemRect=\(visibleRect) bounds=\(shelf.bounds)"
+            TransferShelfDropLayoutTests.findAll(in: shelf, of: NSScrollView.self).isEmpty,
+            "卡片流布局不允许滚动条：面板尺寸必须随内容拉长"
         )
     }
 
     @MainActor
-    func test_documentViewIsPinnedToScrollContentLayout() {
-        let shelf = TransferShelfShelfView(frame: NSRect(x: 0, y: 0, width: 210, height: TransferShelfLayoutSpec.panelHeight))
+    func test_renderedCardLiesFullyInsidePanel() {
+        let size = TransferShelfLayoutSpec.panelSize(itemCount: 1, screenWidth: 1512)
+        let shelf = TransferShelfShelfView(frame: NSRect(origin: .zero, size: size))
+        shelf.render(items: [TransferItem(url: URL(fileURLWithPath: "/tmp/shelf-card-test.txt"))])
         shelf.layoutSubtreeIfNeeded()
 
-        guard let scrollView = TransferShelfDropLayoutTests.findAll(in: shelf, of: NSScrollView.self).first,
-              let stack = scrollView.documentView as? NSStackView else {
-            return XCTFail("面板应包含以 NSStackView 为 documentView 的滚动区")
+        let cards = TransferShelfDropLayoutTests.findAll(in: shelf, of: TransferShelfItemView.self)
+        XCTAssertEqual(cards.count, 1, "拖入后应渲染出一张卡片")
+
+        guard let card = cards.first else { return }
+        let cardRect = shelf.convert(card.bounds, from: card)
+        XCTAssertTrue(
+            shelf.bounds.contains(cardRect.insetBy(dx: -0.5, dy: -0.5)),
+            "卡片必须完整落在面板内: card=\(cardRect) bounds=\(shelf.bounds)"
+        )
+    }
+
+    @MainActor
+    func test_overflowItemsWrapToSecondRow() {
+        // 窄屏强换行：500 宽屏 6 张卡 → 一行 4 张 → 2 行，全部可见且无滚动
+        let screenWidth: CGFloat = 500
+        let size = TransferShelfLayoutSpec.panelSize(itemCount: 6, screenWidth: screenWidth)
+        let shelf = TransferShelfShelfView(frame: NSRect(origin: .zero, size: size))
+        shelf.currentScreenWidth = screenWidth
+        let items = (0..<6).map { TransferItem(url: URL(fileURLWithPath: "/tmp/wrap-\($0).txt")) }
+        shelf.render(items: items)
+        shelf.layoutSubtreeIfNeeded()
+
+        let cards = TransferShelfDropLayoutTests.findAll(in: shelf, of: TransferShelfItemView.self)
+        XCTAssertEqual(cards.count, 6)
+
+        let yOrigins = Set(cards.map { shelf.convert($0.bounds.origin, from: $0).y.rounded() })
+        XCTAssertGreaterThanOrEqual(yOrigins.count, 2, "超出一行应换行到第二行")
+
+        for card in cards {
+            let rect = shelf.convert(card.bounds, from: card)
+            XCTAssertTrue(shelf.bounds.contains(rect.insetBy(dx: -0.5, dy: -0.5)),
+                          "换行后每张卡片仍须完整可见: rect=\(rect)")
         }
-        XCTAssertGreaterThan(stack.frame.width, 0, "documentView 宽度必须大于 0(约束钉住 contentLayoutGuide)")
-        XCTAssertGreaterThanOrEqual(stack.frame.width, scrollView.contentSize.width - 0.5,
-                                    "documentView 宽度应与可视内容区一致,否则条目横向不可见")
-        XCTAssertGreaterThanOrEqual(stack.frame.height, 0.5)
+        XCTAssertTrue(TransferShelfDropLayoutTests.findAll(in: shelf, of: NSScrollView.self).isEmpty)
     }
 
     private static func findAll<T: NSView>(in root: NSView, of type: T.Type) -> [T] {

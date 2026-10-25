@@ -3,9 +3,6 @@ import XCTest
 /// TDD: 文件中转站布局规格 - 顶部横向面板、条目尺寸、动画参数。
 final class TransferShelfLayoutSpecTests: XCTestCase {
 
-    func test_panelHeight() {
-        XCTAssertEqual(TransferShelfLayoutSpec.panelHeight, 68, accuracy: 0.1)
-    }
 
     func test_itemSpacing() {
         XCTAssertEqual(TransferShelfLayoutSpec.itemSpacing, 10, accuracy: 0.1)
@@ -22,7 +19,7 @@ final class TransferShelfLayoutSpecTests: XCTestCase {
 
     /// 条目图标尺寸常量（此前 24 内联两处）。
     func test_itemIconSize() {
-        XCTAssertEqual(TransferShelfLayoutSpec.itemIconSize, 24, accuracy: 0.1)
+        XCTAssertEqual(TransferShelfLayoutSpec.itemIconSize, 32, accuracy: 0.1)
     }
 
     func test_fadeDurations() {
@@ -73,25 +70,9 @@ final class TransferShelfLayoutSpecTests: XCTestCase {
         XCTAssertGreaterThan(frame.height, 0)
     }
 
-    func test_verticalPanelWidth() {
-        XCTAssertEqual(TransferShelfLayoutSpec.verticalPanelWidth, 180, accuracy: 0.1)
-    }
 
-    func test_verticalItemSize() {
-        // 宽度自适应后条目宽度随面板宽度计算(不再固定 156);高度保持两行结构。
-        XCTAssertEqual(TransferShelfLayoutSpec.verticalItemHeight, 44, accuracy: 0.1)
-    }
 
-    func test_verticalPanelHeightFitsItems() {
-        let height = TransferShelfLayoutSpec.panelHeight(itemCount: 3)
-        let expected = TransferShelfLayoutSpec.headerHeight + 12 + 44 * 3 + 10 * 2 + 12
-        XCTAssertEqual(height, expected, accuracy: 0.1, "内容区之上要预留头部栏高度")
-    }
 
-    func test_verticalPanelHeightCappedToMax() {
-        let height = TransferShelfLayoutSpec.panelHeight(itemCount: 30, maxHeight: 400)
-        XCTAssertLessThanOrEqual(height, 400)
-    }
 
     /// 毛玻璃规格:hudWindow 材质(替代旧的半透明自绘背景)。
     func test_panelMaterialIsHUDWindow() {
@@ -121,39 +102,11 @@ final class TransferShelfLayoutSpecTests: XCTestCase {
 
     // MARK: - ⑤ 宽度自适应(clamp 200–260)
 
-    func test_panelWidthClampsToMinimum() {
-        let width = TransferShelfLayoutSpec.panelWidth(itemTextWidths: [4])
-        XCTAssertEqual(width, 200, accuracy: 0.1, "短条目也保持 200pt 下限")
-    }
 
-    func test_panelWidthClampsToMaximum() {
-        let width = TransferShelfLayoutSpec.panelWidth(itemTextWidths: [600])
-        XCTAssertEqual(width, 260, accuracy: 0.1, "长条目封顶 260pt")
-    }
 
-    func test_panelWidthFitsLongestText() {
-        let width = TransferShelfLayoutSpec.panelWidth(itemTextWidths: [60, 120, 90])
-        let expected = min(max(120 + TransferShelfLayoutSpec.itemChromeWidth
-                                + TransferShelfLayoutSpec.panelPadding * 2, 200), 260)
-        XCTAssertEqual(width, expected, accuracy: 0.1, "面板宽度由最长条目文本决定")
-    }
 
-    func test_panelWidthEmptyItemsFallsBackToMinimum() {
-        XCTAssertEqual(TransferShelfLayoutSpec.panelWidth(itemTextWidths: []), 200, accuracy: 0.1)
-    }
 
-    func test_itemChromeWidthCoversIconAndButtons() {
-        // 8(icon leading) + 24(icon) + 8(gap) + 4(text 右间距) + 12(clear) + 2(offset) + 8(trailing)
-        XCTAssertEqual(TransferShelfLayoutSpec.itemChromeWidth, 66, accuracy: 0.1)
-    }
 
-    func test_itemTextWidthMeasuresLongerTextAsWider() {
-        let short = TransferShelfLayoutSpec.itemTextWidth(for: "ab", font: .systemFont(ofSize: 12))
-        let long = TransferShelfLayoutSpec.itemTextWidth(
-            for: String(repeating: "长文本", count: 40), font: .systemFont(ofSize: 12)
-        )
-        XCTAssertGreaterThan(long, short, "文本宽度测量应随内容增长(供 panelWidth 使用)")
-    }
 
     func test_panelHairlineWidth() {
         XCTAssertEqual(TransferShelfLayoutSpec.panelHairlineWidth, 1, accuracy: 0.1)
@@ -174,5 +127,70 @@ final class TransferShelfLayoutSpecTests: XCTestCase {
     func test_dragImageFrameIsSquare() {
         let frame = TransferShelfLayoutSpec.dragImageFrame
         XCTAssertEqual(frame.width, frame.height, accuracy: 0.1)
+    }
+
+    // MARK: - 卡片横向流（换行、无滚动）
+
+    func test_cardSizeIsSquare() {
+        XCTAssertEqual(TransferShelfLayoutSpec.cardSize.width,
+                       TransferShelfLayoutSpec.cardSize.height, accuracy: 0.1)
+        XCTAssertEqual(TransferShelfLayoutSpec.cardSize.width, 84, accuracy: 0.1)
+    }
+
+    func test_cardsPerRow_fitsWideScreen() {
+        // 1512 屏：可用 1512-48-24=1440；(1440+10)/94=15.4 → 15；条目仅 6 张 → 6
+        XCTAssertEqual(TransferShelfLayoutSpec.cardsPerRow(itemCount: 6, screenWidth: 1512), 6)
+    }
+
+    func test_cardsPerRow_wrapsOnNarrowScreen() {
+        // 500 屏：可用 428；(428+10)/94=4.6 → 4 张一行
+        XCTAssertEqual(TransferShelfLayoutSpec.cardsPerRow(itemCount: 9, screenWidth: 500), 4)
+    }
+
+    func test_cardsPerRow_atLeastOne() {
+        XCTAssertEqual(TransferShelfLayoutSpec.cardsPerRow(itemCount: 3, screenWidth: 120), 1,
+                       "极窄屏也必须保证一行至少 1 张")
+    }
+
+    func test_panelSize_emptyUsesEmptyState() {
+        let size = TransferShelfLayoutSpec.panelSize(itemCount: 0, screenWidth: 1512)
+        XCTAssertEqual(size.width, TransferShelfLayoutSpec.emptyPanelWidth, accuracy: 0.1)
+        XCTAssertEqual(size.height, TransferShelfLayoutSpec.emptyPanelHeight, accuracy: 0.1)
+    }
+
+    func test_panelSize_singleItem() {
+        let size = TransferShelfLayoutSpec.panelSize(itemCount: 1, screenWidth: 1512)
+        // 单张卡片内容宽 84+24=108 < 空态宽 → 宽度抬到空态宽
+        XCTAssertEqual(size.width, TransferShelfLayoutSpec.emptyPanelWidth, accuracy: 0.1)
+        let expectedH = TransferShelfLayoutSpec.headerHeight
+            + TransferShelfLayoutSpec.contentTopGap
+            + TransferShelfLayoutSpec.cardSize.height
+            + TransferShelfLayoutSpec.panelPadding
+        XCTAssertEqual(size.height, expectedH, accuracy: 0.1)
+    }
+
+    func test_panelSize_widthHugsColumns() {
+        let size = TransferShelfLayoutSpec.panelSize(itemCount: 3, screenWidth: 1512)
+        let expectedW = CGFloat(3 * 84 + 2 * 10) + 2 * TransferShelfLayoutSpec.panelPadding
+        XCTAssertEqual(size.width, expectedW, accuracy: 0.1, "宽度随列数拉长")
+    }
+
+    func test_panelSize_multiRowGrowsWithoutCap() {
+        // 500 宽屏 9 项 → 4 张一行 → 3 行；高度不封顶
+        let size = TransferShelfLayoutSpec.panelSize(itemCount: 9, screenWidth: 500)
+        let content = CGFloat(3 * 84 + 2 * 10)
+        let expectedH = TransferShelfLayoutSpec.headerHeight
+            + TransferShelfLayoutSpec.contentTopGap + content
+            + TransferShelfLayoutSpec.panelPadding
+        XCTAssertEqual(size.height, expectedH, accuracy: 0.1, "换行兜底，高度无上限")
+    }
+
+    func test_panelSize_widthNeverExceedsScreenMargin() {
+        let size = TransferShelfLayoutSpec.panelSize(itemCount: 40, screenWidth: 800)
+        XCTAssertLessThanOrEqual(
+            size.width,
+            800 - TransferShelfLayoutSpec.screenSideMargin * 2 + 0.1,
+            "面板再长也不越过屏幕两侧留白"
+        )
     }
 }
