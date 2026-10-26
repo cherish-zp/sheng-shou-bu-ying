@@ -54,7 +54,9 @@ final class PortQueryService {
                 DispatchQueue.main.async { completion(.failure(error)) }
                 return
             }
-            let output = String(data: result.data, encoding: .utf8) ?? ""
+            // lsof 输出可能含非 UTF-8 字节（进程名/套接字标识带原始字节）：
+            // 用无损容错解码（非法字节替换 U+FFFD），String(data:encoding:) 会整块返回 nil
+            let output = String(decoding: result.data, as: UTF8.self)
             let entries = PortQueryParser.parse(output, currentUserName: NSUserName())
             DispatchQueue.main.async { completion(.success(entries)) }
         }

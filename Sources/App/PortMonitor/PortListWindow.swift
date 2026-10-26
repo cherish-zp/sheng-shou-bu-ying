@@ -51,6 +51,9 @@ final class PortListWindowController: NSObject, NSWindowDelegate, NSTableViewDat
     }
 
     func showAndRefresh() {
+        // 激活应用再前置：.regular 下 makeKeyAndOrderFront 不会抢占其他应用的前层，
+        // 菜单点击后窗口会藏在当前活跃应用窗口后面
+        NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         refresh()
     }
