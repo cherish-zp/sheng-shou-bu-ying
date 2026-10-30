@@ -48,7 +48,8 @@ final class TransferShelfShelfView: NSView {
         // 由容器裁剪后两者兼得。
         layer?.cornerRadius = TransferShelfLayoutSpec.cornerRadius
         layer?.masksToBounds = true
-        layer?.borderColor = NSColor.white.withAlphaComponent(0.10).cgColor
+        layer?.backgroundColor = UITheme.panelBackground.cgColor
+        layer?.borderColor = UITheme.hairline.cgColor
         layer?.borderWidth = TransferShelfLayoutSpec.panelHairlineWidth
 
         effectView.material = TransferShelfLayoutSpec.panelMaterial
@@ -59,7 +60,7 @@ final class TransferShelfShelfView: NSView {
 
         // 头部栏：标题 + 条目计数 + 清空按钮
         titleLabel.font = .systemFont(ofSize: 11, weight: .semibold)
-        titleLabel.textColor = .labelColor
+        titleLabel.textColor = UITheme.textPrimary
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(titleLabel)
 
@@ -154,7 +155,7 @@ final class TransferShelfShelfView: NSView {
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        layer?.borderColor = NSColor.white.withAlphaComponent(0.10).cgColor
+        layer?.borderColor = UITheme.hairline.cgColor
     }
 
     override func wantsPeriodicDraggingUpdates() -> Bool {
@@ -283,7 +284,7 @@ final class TransferShelfShelfView: NSView {
 
     override func draggingExited(_ sender: NSDraggingInfo?) {
         layer?.borderWidth = TransferShelfLayoutSpec.panelHairlineWidth
-        layer?.borderColor = NSColor.white.withAlphaComponent(0.10).cgColor
+        layer?.borderColor = UITheme.hairline.cgColor
     }
 
     /// 按实际接受情况返回：可识别内容（含超限拒绝——已有 Toast 反馈）返回 true，
@@ -298,7 +299,7 @@ final class TransferShelfShelfView: NSView {
 
     private func resetBorder() {
         layer?.borderWidth = TransferShelfLayoutSpec.panelHairlineWidth
-        layer?.borderColor = NSColor.white.withAlphaComponent(0.10).cgColor
+        layer?.borderColor = UITheme.hairline.cgColor
     }
 
     @objc private func clearAllClicked() {

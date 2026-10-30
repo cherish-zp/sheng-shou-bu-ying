@@ -48,13 +48,9 @@ final class TransferShelfItemView: NSView {
 
     /// hover/普通背景用显式动态色：labelColor 按 alpha 叠加，深浅色模式都可见
     /// （修复旧实现硬编码 white 在浅色模式下几乎不可见的问题）。
-    private static var normalBackground: NSColor {
-        NSColor.labelColor.withAlphaComponent(0.06)
-    }
+    private static var normalBackground: NSColor { UITheme.cardBackground }
 
-    private static var hoverBackground: NSColor {
-        NSColor.labelColor.withAlphaComponent(0.14)
-    }
+    private static var hoverBackground: NSColor { UITheme.cardHover }
 
     init(item: TransferItem) {
         self.item = item
@@ -66,7 +62,7 @@ final class TransferShelfItemView: NSView {
 
         nameLabel.stringValue = item.name
         nameLabel.font = .systemFont(ofSize: 13, weight: .medium)
-        nameLabel.textColor = .labelColor
+        nameLabel.textColor = UITheme.textPrimary
         nameLabel.maximumNumberOfLines = 1
         nameLabel.lineBreakMode = .byTruncatingMiddle
         nameLabel.cell?.truncatesLastVisibleLine = true
@@ -79,6 +75,7 @@ final class TransferShelfItemView: NSView {
         wantsLayer = true
         layer?.cornerRadius = TransferShelfLayoutSpec.itemCornerRadius
         layer?.backgroundColor = Self.normalBackground.cgColor
+        layer?.borderColor = UITheme.categoryColor(for: item.kind.rawValue).withAlphaComponent(0.55).cgColor
 
         removeButton.bezelStyle = .texturedRounded
         removeButton.isBordered = false
@@ -216,7 +213,7 @@ final class TransferShelfItemView: NSView {
 
     override func mouseEntered(with event: NSEvent) {
         animateBackground(to: Self.hoverBackground)
-        removeButton.contentTintColor = .labelColor
+        removeButton.contentTintColor = UITheme.textPrimary
         onHover?(item.id)
     }
 

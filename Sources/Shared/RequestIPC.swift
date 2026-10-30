@@ -41,6 +41,8 @@ public final class RequestFileCreator: FileCreator {
 public final class RequestProcessor {
     private let queueDirectory: URL
     private let service: CreateFileService
+    /// 文件夹动作处理器（App 侧注入；扩展进程为 nil，动作请求被丢弃）。
+    public var folderActionHandler: ((FolderActionRequest) -> Void)?
 
     public init(queueDirectory: URL, service: CreateFileService = CreateFileService()) {
         self.queueDirectory = queueDirectory
@@ -52,12 +54,22 @@ public final class RequestProcessor {
     public func processAll() -> Int {
         let files = (try? FileManager.default.contentsOfDirectory(at: queueDirectory, includingPropertiesForKeys: nil)) ?? []
         var processed = 0
+        var handler: ((FolderActionRequest) -> Void)?
+        if let folderActionHandler = folderActionHandler { handler = folderActionHandler }
         for file in files where file.pathExtension == "json" {
             defer { try? FileManager.default.removeItem(at: file) }
             guard let data = try? Data(contentsOf: file),
-                  let request = try? JSONDecoder().decode(CreateFileRequest.self, from: data) else {
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 continue
             }
+            if object["action"] != nil {
+                // 文件夹动作请求（无 action 字段的才是建文件请求）
+                guard let request = try? JSONDecoder().decode(FolderActionRequest.self, from: data) else { continue }
+                handler?(request)
+                processed += 1
+                continue
+            }
+            guard let request = try? JSONDecoder().decode(CreateFileRequest.self, from: data) else { continue }
             _ = service.createFile(request: request)
             processed += 1
         }

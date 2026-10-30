@@ -297,7 +297,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 轮询扩展容器里的"新建文件"请求队列，由本非沙盒进程真正创建文件。
     private func startRequestPolling() {
-        requestProcessor = RequestProcessor(queueDirectory: IPCConfig.extensionRequestDirectory())
+        let processor = RequestProcessor(queueDirectory: IPCConfig.extensionRequestDirectory())
+        let folderActionService = FolderActionService()
+        processor.folderActionHandler = { [folderActionService] request in
+            folderActionService.handle(request)
+        }
+        requestProcessor = processor
         let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.requestProcessor?.processAll()
         }
