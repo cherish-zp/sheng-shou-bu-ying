@@ -55,6 +55,23 @@ public enum UITheme {
 
     // MARK: - 便捷样式
 
+    /// 窗口整体深色化：底色换面板色 + 外观强制 darkAqua。
+    /// 所有功能窗口 show/init 时必须调用，否则窗口本体是系统白色。
+    public static func applyDark(_ window: NSWindow) {
+        window.backgroundColor = panelBackground
+        window.appearance = NSAppearance(named: .darkAqua)
+    }
+
+    /// 滚动区深色化：关闭白底（NSScrollView 默认白）、清表格底色、去交替行浅色条。
+    public static func darkScroll(_ scroll: NSScrollView) {
+        scroll.drawsBackground = false
+        scroll.backgroundColor = .clear
+        if let table = scroll.documentView as? NSTableView {
+            table.backgroundColor = .clear
+            table.usesAlternatingRowBackgroundColors = false
+        }
+    }
+
     /// 给面板视图统一上深色底 + 圆角 + 描边。
     public static func stylePanel(_ view: NSView) {
         view.wantsLayer = true

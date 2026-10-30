@@ -33,6 +33,7 @@ final class TextToolkitWindowController: NSObject {
         // 输入区
         let inputScroll = NSScrollView()
         inputScroll.hasVerticalScroller = true
+        inputScroll.drawsBackground = false
         inputScroll.translatesAutoresizingMaskIntoConstraints = false
         UITheme.styleCard(inputScroll)
         let input = NSTextView(frame: NSRect(x: 0, y: 0, width: 690, height: 160))
@@ -47,6 +48,7 @@ final class TextToolkitWindowController: NSObject {
         // 输出区
         let outputScroll = NSScrollView()
         outputScroll.hasVerticalScroller = true
+        outputScroll.drawsBackground = false
         outputScroll.translatesAutoresizingMaskIntoConstraints = false
         UITheme.styleCard(outputScroll)
         let output = NSTextView(frame: NSRect(x: 0, y: 0, width: 690, height: 160))
@@ -62,6 +64,7 @@ final class TextToolkitWindowController: NSObject {
 
         window.title = "文本工具集"
         window.isReleasedWhenClosed = false
+        UITheme.applyDark(window)
         window.center()
 
         let content = NSView(frame: NSRect(x: 0, y: 0, width: 720, height: 480))

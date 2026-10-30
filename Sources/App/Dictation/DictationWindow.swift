@@ -23,6 +23,7 @@ final class DictationWindowController: NSObject, SFSpeechRecognizerDelegate {
 
         window.title = "语音听写"
         window.isReleasedWhenClosed = false
+        UITheme.applyDark(window)
         window.center()
         let content = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 320))
         content.autoresizingMask = [.width, .height]

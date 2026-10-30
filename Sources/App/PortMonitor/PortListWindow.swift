@@ -41,6 +41,7 @@ final class PortListWindowController: NSObject, NSWindowDelegate, NSTableViewDat
 
         window.title = "端口占用"
         window.isReleasedWhenClosed = false
+        UITheme.applyDark(window)
         window.center()
 
         let content = NSView(frame: NSRect(x: 0, y: 0, width: 780, height: 500))
@@ -92,7 +93,7 @@ final class PortListWindowController: NSObject, NSWindowDelegate, NSTableViewDat
         tableView.headerView = NSTableHeaderView()
         tableView.rowHeight = 30
         tableView.allowsColumnResizing = true
-        tableView.usesAlternatingRowBackgroundColors = true
+        tableView.backgroundColor = .clear
         tableView.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
 
         for (title, width) in [("端口", 80.0), ("协议", 60.0), ("PID", 70.0),
@@ -107,24 +108,25 @@ final class PortListWindowController: NSObject, NSWindowDelegate, NSTableViewDat
         let scroll = NSScrollView()
         scroll.documentView = tableView
         scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
         scroll.borderType = .bezelBorder
         scroll.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(scroll)
 
         // 空态
         emptyLabel = NSTextField(labelWithString: "无端口占用")
-        emptyLabel.textColor = .secondaryLabelColor
+        emptyLabel.textColor = UITheme.textSecondary
         emptyLabel.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(emptyLabel)
         detailLabel = NSTextField(labelWithString: " ")
         detailLabel.lineBreakMode = .byTruncatingMiddle
-        detailLabel.textColor = .secondaryLabelColor
+        detailLabel.textColor = UITheme.textSecondary
         detailLabel.font = .systemFont(ofSize: 11)
         detailLabel.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(detailLabel)
 
         statusLabel = NSTextField(labelWithString: " ")
-        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.textColor = UITheme.textSecondary
         statusLabel.font = .systemFont(ofSize: 11)
         statusLabel.alignment = .right
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -275,7 +277,7 @@ final class PortListWindowController: NSObject, NSWindowDelegate, NSTableViewDat
                 return cell
             }()
         cell.textField?.stringValue = text
-        cell.textField?.textColor = entry.isCurrentUser ? .labelColor : .secondaryLabelColor
+        cell.textField?.textColor = entry.isCurrentUser ? UITheme.textPrimary : UITheme.textSecondary
         return cell
     }
 

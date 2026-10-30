@@ -74,9 +74,9 @@ final class TransferShelfLayoutSpecTests: XCTestCase {
 
 
 
-    /// 毛玻璃规格:hudWindow 材质(替代旧的半透明自绘背景)。
-    func test_panelMaterialIsHUDWindow() {
-        XCTAssertEqual(TransferShelfLayoutSpec.panelMaterial, .hudWindow)
+    /// 毛玻璃规格：深色材质（对标浮引深色面板，替代旧 hudWindow 浅色材质）。
+    func test_panelMaterialIsDark() {
+        XCTAssertEqual(TransferShelfLayoutSpec.panelMaterial, .underPageBackground)
     }
 
     // MARK: - UI ③ 头部栏 / ④ 空态与动画 / ⑤ 宽度自适应

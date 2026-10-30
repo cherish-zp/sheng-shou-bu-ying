@@ -85,6 +85,7 @@ final class ClipboardHistoryModule: NSObject, NSTableViewDataSource, NSTableView
                               backing: .buffered, defer: false)
         window.title = "剪贴板历史"
         window.isReleasedWhenClosed = false
+        UITheme.applyDark(window)
         window.center()
         self.window = window
 

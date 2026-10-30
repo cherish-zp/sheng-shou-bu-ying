@@ -52,7 +52,7 @@ public enum TransferShelfLayoutSpec {
     public static let hotHintSize = NSSize(width: 118, height: 28)
 
     /// UI ① 毛玻璃材质（圆角裁剪由容器 layer 负责）。
-    public static let panelMaterial: NSVisualEffectView.Material = .hudWindow
+    public static let panelMaterial: NSVisualEffectView.Material = .underPageBackground
 
     /// 行卡尺寸（图标左 + 名称右，Apple 列表条目语言：高 44、紧凑不滚动）。
     public static let cardSize = NSSize(width: 170, height: 44)

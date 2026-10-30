@@ -30,6 +30,7 @@ final class ScratchPadModule: NSObject, NSTextViewDelegate {
                               backing: .buffered, defer: false)
         window.title = "速记（自动保存 · 置顶）"
         window.isReleasedWhenClosed = false
+        UITheme.applyDark(window)
         window.level = .floating   // 置顶参考
         window.center()
         self.window = window
