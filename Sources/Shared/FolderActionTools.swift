@@ -5,7 +5,7 @@ import Foundation
 /// 由非沙盒 App 侧 FolderActionService 真正执行（含 UI 确认）。
 public final class FolderActionTool: Tool {
     public enum Kind {
-        case paste, copyTo, moveTo, deleteForever, showHidden, toggleExtension
+        case paste, copyTo, moveTo, deleteForever, showHidden, toggleExtension, compress, extract
 
         var id: String {
             switch self {
@@ -15,6 +15,8 @@ public final class FolderActionTool: Tool {
             case .deleteForever: return "delete-forever"
             case .showHidden: return "show-hidden"
             case .toggleExtension: return "toggle-extension"
+            case .compress: return "compress"
+            case .extract: return "extract"
             }
         }
 
@@ -26,6 +28,8 @@ public final class FolderActionTool: Tool {
             case .deleteForever: return "彻底删除"
             case .showHidden: return "显示/隐藏文件"
             case .toggleExtension: return "显示/隐藏扩展名"
+            case .compress: return "压缩"
+            case .extract: return "解压"
             }
         }
     }
@@ -59,7 +63,7 @@ public final class FolderActionTool: Tool {
         let paths: [String]
         switch kind {
         case .paste, .showHidden, .toggleExtension: paths = [directory.path]
-        default: paths = urls.map(\.path)
+        case .compress, .extract, .copyTo, .moveTo, .deleteForever: paths = urls.map(\.path)
         }
         let action: FolderActionRequest.Action
         switch kind {
@@ -69,6 +73,8 @@ public final class FolderActionTool: Tool {
         case .deleteForever: action = .deleteForever
         case .showHidden: action = .showHidden
         case .toggleExtension: action = .toggleExtension
+        case .compress: action = .compress
+        case .extract: action = .extract
         }
         writer.write(FolderActionRequest(action: action, directory: directory.path, paths: paths))
     }

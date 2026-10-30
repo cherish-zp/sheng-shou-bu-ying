@@ -52,7 +52,52 @@ final class FolderActionService {
         case .deleteForever: deleteForever(paths)
         case .showHidden: toggleShowHidden(in: directory)
         case .toggleExtension: toggleExtension()
+        case .compress: compress(paths, in: directory)
+        case .extract: extract(paths, into: directory)
         }
+    }
+
+    /// 压缩为 zip（系统 zip 工具，后台执行）。
+    private func compress(_ paths: [URL], in directory: URL) {
+        guard !paths.isEmpty else { return }
+        let archiveName = "归档-" + DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .short)
+            .replacingOccurrences(of: "/", with: "-") + ".zip"
+        let archive = directory.appendingPathComponent(archiveName)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        process.arguments = ["-r", "-q", archive.path] + paths.map(\.path)
+        try? process.run()
+    }
+
+    /// 解压到选中目录；不支持格式（rar/7z）给出明确提示。
+    private func extract(_ paths: [URL], into directory: URL) {
+        for archive in paths {
+            let lower = archive.path.lowercased()
+            let process = Process()
+            if lower.hasSuffix(".zip") {
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
+                process.arguments = ["-o", "-q", archive.path, "-d", directory.path]
+            } else if lower.hasSuffix(".tar.gz") || lower.hasSuffix(".tgz") {
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+                process.arguments = ["-xzf", archive.path, "-C", directory.path]
+            } else if lower.hasSuffix(".tar.bz2") || lower.hasSuffix(".tbz") {
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+                process.arguments = ["-xjf", archive.path, "-C", directory.path]
+            } else if lower.hasSuffix(".tar") {
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+                process.arguments = ["-xf", archive.path, "-C", directory.path]
+            } else {
+                presentNotice("暂不支持该压缩格式：\(archive.lastPathComponent)（rar/7z 需第三方引擎）")
+                continue
+            }
+            try? process.run()
+        }
+    }
+
+    private func presentNotice(_ text: String) {
+        let alert = NSAlert()
+        alert.messageText = text
+        alert.runModal()
     }
 
     private func paste(into directory: URL) {

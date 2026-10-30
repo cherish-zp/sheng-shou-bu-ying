@@ -31,6 +31,8 @@ targets:
     dependencies:
       - target: FinderSyncExt
         embed: true
+      - target: ShouShouWidgets
+        embed: true
   FinderSyncExt:
     type: app-extension
     platform: macOS
@@ -49,6 +51,18 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Resources/Ext-Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  ShouShouWidgets:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Sources/Widgets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zp.shengshoubuying.widgets
+        PRODUCT_NAME: ShouShouWidgets
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Resources/Widget-Info.plist
+        CODE_SIGN_STYLE: Automatic
   mac_tool_proTests:
     type: bundle.unit-test
     platform: macOS

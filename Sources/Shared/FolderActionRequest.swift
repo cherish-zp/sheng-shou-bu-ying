@@ -8,6 +8,8 @@ public struct FolderActionRequest: Codable {
         case copyTo         // paths 复制到用户选择的文件夹
         case moveTo         // paths 移动到用户选择的文件夹
         case deleteForever  // 彻底删除 paths（不可恢复，App 侧强制确认）
+        case compress       // paths 压缩为 directory 内 zip
+        case extract        // 解压 paths[0] 到 directory
         case showHidden     // 切换 Finder 显示隐藏文件
         case toggleExtension // 切换 Finder 显示文件扩展名
     }

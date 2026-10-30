@@ -13,6 +13,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var portMonitorModule: PortMonitorModule!
     private var textToolkitWindowController: TextToolkitWindowController?
     private let qrReaderService = QRReaderService()
+    private let clipboardHistoryModule = ClipboardHistoryModule()
+    private let scratchPadModule = ScratchPadModule()
+    private var translatePanelController: TranslatePanelController?
+    private var dictationWindowController: DictationWindowController?
+    private var launcherPanelController: LauncherPanelController?
+    private let gifRecorder = GIFRecorder()
+    private let remoteControlServer = RemoteControlServer.shared
     private var globalKeyMonitor: Any?
     private var eventTapListener: CGEventTapHotkeyListener?
     private var permissionTimer: Timer?
@@ -113,6 +120,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         moduleRegistry.register(ColorPickerModule())
         portMonitorModule = PortMonitorModule()
         moduleRegistry.register(portMonitorModule)
+
+        clipboardHistoryModule.start()
+
+        // 手机遥控：动作映射到现有能力；应用启动即开启本地网络服务
+        remoteControlServer.onAction = { [weak self] action in
+            switch action {
+            case "screenshot": self?.triggerScreenshot()
+            case "lock": self?.lockScreen()
+            case "reveal-desktop": self?.revealDesktop()
+            default: break
+            }
+        }
+        remoteControlServer.start()
     }
 
     /// 显示文本工具集窗口（单例复用）。
@@ -132,6 +152,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 TransientHudToast.show(text: error.localizedDescription)
             }
         }
+    }
+
+    /// 剪贴板历史窗口。
+    @objc private func showClipboardHistory() {
+        clipboardHistoryModule.showWindow()
+    }
+
+    /// 速记置顶窗口。
+    @objc private func showScratchPad() {
+        scratchPadModule.perform()
+    }
+
+    /// 翻译面板。
+    @objc private func showTranslatePanel() {
+        let controller = translatePanelController ?? TranslatePanelController()
+        translatePanelController = controller
+        controller.showPanel()
+    }
+
+    /// 语音听写窗口。
+    @objc private func showDictation() {
+        let controller = dictationWindowController ?? DictationWindowController()
+        dictationWindowController = controller
+        controller.showPanel()
+    }
+
+    /// 启动器面板。
+    @objc private func showLauncher() {
+        let controller = launcherPanelController ?? LauncherPanelController()
+        launcherPanelController = controller
+        controller.showPanel()
+    }
+
+    /// GIF 录制开停（主屏）。
+    @objc private func toggleGIF() {
+        gifRecorder.isRunning ? gifRecorder.stop() : gifRecorder.start()
     }
 
     /// 锁屏：熄屏并要求输入密码（跟随系统安全设置）。
@@ -275,8 +331,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         let toolsHeader = menu.addItem(withTitle: "工具", action: nil, keyEquivalent: "")
         toolsHeader.isEnabled = false
-        for (title, action) in [("文本工具…", #selector(showTextToolkit)),
+        for (title, action) in [("剪贴板历史", #selector(showClipboardHistory)),
+                                ("速记", #selector(showScratchPad)),
+                                ("翻译…", #selector(showTranslatePanel)),
+                                ("语音听写…", #selector(showDictation)),
+                                ("启动器…", #selector(showLauncher)),
+                                ("文本工具…", #selector(showTextToolkit)),
                                 ("识别二维码", #selector(recognizeQRCode)),
+                                ("录 GIF（主屏）", #selector(toggleGIF)),
                                 ("锁屏", #selector(lockScreen)),
                                 ("回桌", #selector(revealDesktop))] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")

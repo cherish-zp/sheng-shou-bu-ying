@@ -17,6 +17,8 @@ public final class ToolRegistry {
         FolderActionTool(.deleteForever),
         FolderActionTool(.showHidden),
         FolderActionTool(.toggleExtension),
+        FolderActionTool(.compress),
+        FolderActionTool(.extract),
         NewDocumentTool(baseName: "新建文本文档.txt", title: "文本文档", symbol: "doc.plaintext", fileCreator: RequestFileCreator()),
         NewDocumentTool(baseName: "新建富文本.rtf", title: "富文本", symbol: "doc.richtext", fileCreator: RequestFileCreator()),
         NewDocumentTool(baseName: "新建WPS文字.wps", title: "WPS 文字", symbol: "doc.text", fileCreator: RequestFileCreator()),
