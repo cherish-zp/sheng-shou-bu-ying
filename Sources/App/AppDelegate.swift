@@ -11,6 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var screenshotModule: ScreenshotModule!
     private var transferShelfModule: TransferShelfModule!
     private var portMonitorModule: PortMonitorModule!
+    private var textToolkitWindowController: TextToolkitWindowController?
+    private let qrReaderService = QRReaderService()
     private var globalKeyMonitor: Any?
     private var eventTapListener: CGEventTapHotkeyListener?
     private var permissionTimer: Timer?
@@ -111,6 +113,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         moduleRegistry.register(ColorPickerModule())
         portMonitorModule = PortMonitorModule()
         moduleRegistry.register(portMonitorModule)
+    }
+
+    /// 显示文本工具集窗口（单例复用）。
+    @objc private func showTextToolkit() {
+        let controller = textToolkitWindowController ?? TextToolkitWindowController()
+        textToolkitWindowController = controller
+        controller.showAndFocus()
+    }
+
+    /// 剪贴板图片识别二维码，载荷回写剪贴板。
+    @objc private func recognizeQRCode() {
+        qrReaderService.readFromPasteboard { result in
+            switch result {
+            case .success(let payload):
+                TransientHudToast.show(text: "已复制二维码内容：\(payload.prefix(60))")
+            case .failure(let error):
+                TransientHudToast.show(text: error.localizedDescription)
+            }
+        }
+    }
+
+    /// 锁屏：熄屏并要求输入密码（跟随系统安全设置）。
+    @objc private func lockScreen() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+        process.arguments = ["displaysleepnow"]
+        try? process.run()
+    }
+
+    /// 回桌：激活访达并隐藏其他应用。
+    @objc private func revealDesktop() {
+        NSApp.hideOtherApplications(nil)
+        NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app"))
     }
 
     /// 热键监听：三层兜底确保 F1 能触发截图。
@@ -235,6 +270,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         portItem.target = self
         portItem.isEnabled = moduleRegistry.isEnabled("portMonitor")
         menu.addItem(portItem)
+
+        // 工具
+        menu.addItem(.separator())
+        let toolsHeader = menu.addItem(withTitle: "工具", action: nil, keyEquivalent: "")
+        toolsHeader.isEnabled = false
+        for (title, action) in [("文本工具…", #selector(showTextToolkit)),
+                                ("识别二维码", #selector(recognizeQRCode)),
+                                ("锁屏", #selector(lockScreen)),
+                                ("回桌", #selector(revealDesktop))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            menu.addItem(item)
+        }
 
         menu.addItem(.separator())
         menu.addItem(withTitle: "设置…", action: #selector(showSettings), keyEquivalent: ",")
