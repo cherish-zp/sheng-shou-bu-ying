@@ -46,16 +46,45 @@ public struct HotkeyBinding: Codable, Equatable {
     }
 }
 
-/// 快捷键方案：主修饰键 + 各功能绑定 + 冲突检测。Codable 便于 UserDefaults 持久化。
+/// 快捷键方案：主修饰键 + 各功能绑定 + 面板呼出键 + 冲突检测。Codable 便于 UserDefaults 持久化。
 public struct HotkeyPreferences: Codable, Equatable {
 
     public var primaryModifier: PrimaryModifier
     public var bindings: [String: HotkeyBinding]
+    /// 快捷键面板呼出键（默认 F1、无修饰键；nil = 不呼出）。
+    /// 解码语义：旧 JSON 缺字段回落 F1 默认；显式 null（用户清除）保持 nil。
+    public var panelSummon: Hotkey?
 
     public init(primaryModifier: PrimaryModifier = .option,
-                bindings: [String: HotkeyBinding]? = nil) {
+                bindings: [String: HotkeyBinding]? = nil,
+                panelSummon: Hotkey? = Hotkey(keyCode: 122)) {
         self.primaryModifier = primaryModifier
         self.bindings = bindings ?? HotkeyPreferences.defaultBindings()
+        self.panelSummon = panelSummon
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case primaryModifier, bindings, panelSummon
+    }
+
+    /// 自定义解码：字段缺失（旧 JSON）→ F1 默认；显式 null（用户清除）→ nil。
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        primaryModifier = try container.decodeIfPresent(PrimaryModifier.self, forKey: .primaryModifier) ?? .option
+        bindings = try container.decodeIfPresent([String: HotkeyBinding].self, forKey: .bindings)
+            ?? HotkeyPreferences.defaultBindings()
+        panelSummon = container.contains(.panelSummon)
+            ? try container.decodeIfPresent(Hotkey.self, forKey: .panelSummon)
+            : Hotkey(keyCode: 122)
+    }
+
+    /// 自定义编码：nil 也写显式 null（合成的 encodeIfPresent 会整字段省略，
+    /// 导致「清除后保存」被误读回 F1 默认）。
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(primaryModifier, forKey: .primaryModifier)
+        try container.encode(bindings, forKey: .bindings)
+        try container.encode(panelSummon, forKey: .panelSummon)
     }
 
     /// 解析某功能的最终热键（主修饰键 [+ shift] + 组合键）；无绑定返回 nil。

@@ -1,0 +1,203 @@
+import XCTest
+
+/// TDD: 浮引快捷键面板纯逻辑 —— 浮引键盘布局行序、键位字符→键码对照、
+/// panelSummon 面板呼出键（默认 F1 / 旧 JSON 兼容 / 显式清除保持 nil）、
+/// 应用启动绑定存储（add 覆盖 / remove / 键码查询 / 与功能绑定冲突检测）、
+/// 面板键位合并视图（功能优先 → 应用 → 空键位）。
+final class HotkeyPanelTests: XCTestCase {
+
+    // MARK: - 浮引键盘布局
+
+    func test_layout_fourRowsInFloatPanelOrder() {
+        XCTAssertEqual(HotkeyPanelLayout.rows.count, 4, "浮引键盘 = 4 行")
+        XCTAssertEqual(HotkeyPanelLayout.rows[0],
+                       ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "="],
+                       "第一行 = 数字行")
+        XCTAssertEqual(HotkeyPanelLayout.rows[1],
+                       ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
+                       "第二行 = Q 行")
+        XCTAssertEqual(HotkeyPanelLayout.rows[2],
+                       ["A", "S", "D", "F", "G", "H", "J", "K", "L"],
+                       "第三行 = A 行")
+        XCTAssertEqual(HotkeyPanelLayout.rows[3],
+                       ["Z", "X", "C", "V", "B", "N", "M"],
+                       "第四行 = Z 行")
+    }
+
+    // MARK: - 键位字符 → 键码对照
+
+    func test_keyCodes_spotCheck() {
+        // 数字行（HIToolbox kVK_ANSI_*）
+        XCTAssertEqual(HotkeyPanelKeyCodes.keyCode(for: "1"), 18)
+        XCTAssertEqual(HotkeyPanelKeyCodes.keyCode(for: "5"), 23)
+        XCTAssertEqual(HotkeyPanelKeyCodes.keyCode(for: "6"), 22)
+        XCTAssertEqual(HotkeyPanelKeyCodes.keyCode(for: "0"), 29)
+        XCTAssertEqual(HotkeyPanelKeyCodes.keyCode(for: "-"), 27)
+        XCTAssertEqual(HotkeyPanelKeyCodes.keyCode(for: "="), 24)
+        // 字母行
+        XCTAssertEqual(HotkeyPanelKeyCodes.keyCode(for: "Q"), 12)
+        XCTAssertEqual(HotkeyPanelKeyCodes.keyCode(for: "P"), 35)
+        XCTAssertEqual(HotkeyPanelKeyCodes.keyCode(for: "A"), 0)
+        XCTAssertEqual(HotkeyPanelKeyCodes.keyCode(for: "L"), 37)
+        XCTAssertEqual(HotkeyPanelKeyCodes.keyCode(for: "Z"), 6)
+        XCTAssertEqual(HotkeyPanelKeyCodes.keyCode(for: "X"), 7)
+        XCTAssertEqual(HotkeyPanelKeyCodes.keyCode(for: "C"), 8)
+        XCTAssertEqual(HotkeyPanelKeyCodes.keyCode(for: "M"), 46)
+    }
+
+    func test_keyCodes_coverEveryLayoutKey() {
+        for row in HotkeyPanelLayout.rows {
+            for key in row {
+                XCTAssertNotNil(HotkeyPanelKeyCodes.keyCode(for: key), "布局键 \(key) 必须有键码对照")
+            }
+        }
+    }
+
+    // MARK: - panelSummon（面板呼出键）
+
+    func test_panelSummon_defaultIsF1NoModifier() {
+        XCTAssertEqual(HotkeyPreferences.withDefaults().panelSummon, Hotkey(keyCode: 122),
+                       "默认 F1、无修饰键")
+    }
+
+    func test_panelSummon_legacyJSONWithoutField_fallsBackToDefaultF1() throws {
+        // 旧版本 JSON：只有 primaryModifier + bindings，无 panelSummon 字段
+        let legacy = """
+        {"primaryModifier":"option","bindings":{"screenshot":{"keyCode":0,"usesShift":false}}}
+        """
+        let prefs = try JSONDecoder().decode(HotkeyPreferences.self, from: Data(legacy.utf8))
+        XCTAssertEqual(prefs.panelSummon, Hotkey(keyCode: 122), "旧 JSON 缺字段应回落 F1 默认")
+    }
+
+    func test_panelSummon_explicitNullAfterClear_staysNil() throws {
+        // 用户在设置页清除呼出键 → 显式 null，不得回落 F1
+        var prefs = HotkeyPreferences.withDefaults()
+        prefs.panelSummon = nil
+        let data = try JSONEncoder().encode(prefs)
+        let decoded = try JSONDecoder().decode(HotkeyPreferences.self, from: data)
+        XCTAssertNil(decoded.panelSummon, "显式清除（null）应保持 nil")
+    }
+
+    // MARK: - 应用启动绑定
+
+    private func makeApp(_ bundleID: String, _ name: String, _ keyCode: UInt32,
+                         shift: Bool = false) -> AppLaunchBinding {
+        AppLaunchBinding(bundleID: bundleID, name: name, keyCode: keyCode, usesShift: shift)
+    }
+
+    func test_appStore_addOverridesSameKeyCode() {
+        var store = AppLaunchBindingStore()
+        store.add(makeApp("com.apple.safari", "Safari", 12))
+        store.add(makeApp("com.apple.mail", "Mail", 12))
+        XCTAssertEqual(store.bindings.count, 1, "同键码只保留一条")
+        XCTAssertEqual(store.bindings.first?.bundleID, "com.apple.mail", "后写覆盖先写")
+    }
+
+    func test_appStore_addDifferentKeyCodesKeepsBoth() {
+        var store = AppLaunchBindingStore()
+        store.add(makeApp("com.apple.safari", "Safari", 12))
+        store.add(makeApp("com.apple.mail", "Mail", 13))
+        XCTAssertEqual(store.bindings.count, 2)
+    }
+
+    func test_appStore_removeByBundleID() {
+        var store = AppLaunchBindingStore()
+        store.add(makeApp("com.apple.safari", "Safari", 12))
+        store.add(makeApp("com.apple.mail", "Mail", 13))
+        store.remove(bundleID: "com.apple.safari")
+        XCTAssertEqual(store.bindings.map(\.bundleID), ["com.apple.mail"])
+    }
+
+    func test_appStore_bindingForKeyCode() {
+        var store = AppLaunchBindingStore()
+        store.add(makeApp("com.apple.safari", "Safari", 12))
+        XCTAssertEqual(store.binding(forKeyCode: 12)?.bundleID, "com.apple.safari")
+        XCTAssertNil(store.binding(forKeyCode: 13))
+    }
+
+    func test_appStore_conflictsWithFunctionBindings_sameKeySameShift() {
+        let prefs = HotkeyPreferences.withDefaults()   // 截图 = A(0) 无 shift、剪贴板 = X(7)
+        // 直接构造（add 同键码会覆盖，无法并置多条同键码样本）
+        let store = AppLaunchBindingStore(bindings: [
+            makeApp("com.conflict", "冲突", 0),                     // 同键码同 shift → 冲突
+            makeApp("com.shiftDiff", "shift 不同", 0, shift: true),  // 同键码异 shift → 不冲突
+            makeApp("com.free", "空闲键", 3),                       // F 未绑 → 不冲突
+        ])
+        XCTAssertEqual(store.conflicts(with: prefs), [makeApp("com.conflict", "冲突", 0)],
+                       "冲突 = 与功能绑定 HotkeyBinding(keyCode:usesShift:) 等价")
+    }
+
+    func test_appStore_persistence_roundTripWithInjectedDefaults() {
+        let suite = "HotkeyPanelTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        var store = AppLaunchBindingStore()
+        store.add(makeApp("com.apple.safari", "Safari", 12))
+        store.save(defaults: defaults)
+
+        XCTAssertEqual(AppLaunchBindingStore.load(defaults: defaults), store)
+        XCTAssertEqual(AppLaunchBindingStore.load(defaults: defaults).bindings.first?.name, "Safari")
+    }
+
+    func test_appStore_load_corruptedDataFallsBackToEmpty() {
+        let suite = "HotkeyPanelTests.Corrupt.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(Data("not-json".utf8), forKey: "appLaunchBindings")
+        XCTAssertEqual(AppLaunchBindingStore.load(defaults: defaults), AppLaunchBindingStore())
+    }
+
+    // MARK: - 功能 SF Symbol 映射
+
+    func test_symbolMapping_allCatalogIdsHaveSymbols() {
+        for entry in HotkeyPreferences.catalog {
+            XCTAssertNotNil(HotkeyPanelContent.symbolName(for: entry.id),
+                            "功能 \(entry.id) 缺 SF Symbol 映射")
+        }
+        XCTAssertEqual(HotkeyPanelContent.symbolName(for: "hotkeyPanel"), "keyboard")
+        XCTAssertEqual(HotkeyPanelContent.symbolName(for: "screenshot"), "camera.viewfinder")
+    }
+
+    // MARK: - 面板键位合并视图
+
+    func test_cell_functionBound_showsFunctionWithCatalogTitleAndSymbol() {
+        let prefs = HotkeyPreferences.withDefaults()   // 截图绑在 A(0)
+        let cell = HotkeyPanelContent.cell(for: "A", prefs: prefs, appStore: AppLaunchBindingStore())
+        XCTAssertEqual(cell, .function(id: "screenshot", title: "截图", symbolName: "camera.viewfinder"))
+    }
+
+    func test_cell_appBound_showsApp() {
+        var store = AppLaunchBindingStore()
+        store.add(makeApp("com.apple.safari", "Safari", 12))
+        let cell = HotkeyPanelContent.cell(for: "Q", prefs: .withDefaults(), appStore: store)
+        XCTAssertEqual(cell, .app(bundleID: "com.apple.safari", name: "Safari"))
+    }
+
+    func test_cell_unbound_showsEmptyWithKeyLabel() {
+        let cell = HotkeyPanelContent.cell(for: "W", prefs: .withDefaults(), appStore: AppLaunchBindingStore())
+        XCTAssertEqual(cell, .empty(keyLabel: "W"))
+    }
+
+    func test_cell_functionTakesPriorityOverApp() {
+        var store = AppLaunchBindingStore()
+        store.add(makeApp("com.apple.safari", "Safari", 7))   // X 键位被剪贴板历史占用
+        let cell = HotkeyPanelContent.cell(for: "X", prefs: .withDefaults(), appStore: store)
+        XCTAssertEqual(cell, .function(id: "clipboardHistory", title: "剪贴板历史", symbolName: "clipboard"))
+    }
+
+    func test_cell_functionWithShiftStillMatchesByKeyCode() {
+        // 面板键帽无 shift 语义：同键码的功能绑定（⌥⇧A）也点亮键帽
+        var prefs = HotkeyPreferences.withDefaults()
+        prefs.bindings["screenshot"] = HotkeyBinding(keyCode: 0, usesShift: true)
+        let cell = HotkeyPanelContent.cell(for: "A", prefs: prefs, appStore: AppLaunchBindingStore())
+        XCTAssertEqual(cell, .function(id: "screenshot", title: "截图", symbolName: "camera.viewfinder"))
+    }
+
+    func test_cell_lowercaseInputMatchesUppercaseLayout() {
+        let prefs = HotkeyPreferences.withDefaults()
+        let cell = HotkeyPanelContent.cell(for: "a", prefs: prefs, appStore: AppLaunchBindingStore())
+        XCTAssertEqual(cell, .function(id: "screenshot", title: "截图", symbolName: "camera.viewfinder"),
+                       "键位字符大小写不敏感")
+    }
+}

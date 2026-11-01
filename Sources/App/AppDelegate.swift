@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var textToolkitWindowController: TextToolkitWindowController?
     private let qrReaderService = QRReaderService()
     private let clipboardHistoryModule = ClipboardHistoryModule()
+    private lazy var hotkeyPanelModule = HotkeyPanelModule()
     private let scratchPadModule = ScratchPadModule()
     private var calendarWindowController: CalendarWindowController?
     private var translatePanelController: TranslatePanelController?
@@ -139,6 +140,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         moduleRegistry.register(portMonitorModule)
 
         clipboardHistoryModule.start()
+
+        // 快捷键面板：功能直达复用全局热键同一动作映射（含启用状态过滤）
+        hotkeyPanelModule.functionRunner = { [weak self] id in
+            self?.runHotkeyFunction(id: id)
+        }
 
         applyHotkeyPreferences()
 
@@ -270,6 +276,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Alt 主键快捷键方案：读偏好 → 全量重放注册（先注销全部再按方案注册）。
     /// 启动与设置页改动后共用；冲突/系统级注册失败返回失败表并写诊断日志。
+    /// 追加：面板呼出键（无主修饰键，Hotkey 原样注册）+ 应用启动绑定（⌥+键位 直达启动）。
     @discardableResult
     func applyHotkeyPreferences() -> [String: Hotkey] {
         let prefs = HotkeyPreferences.load()
@@ -277,8 +284,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for (id, hotkey) in failures {
             DiagLog.write("Hotkey register failed: \(id) keyCode=\(hotkey.keyCode) mods=\(hotkey.modifiers)")
         }
+        registerPanelSummon(prefs)
+        registerAppLaunchBindings(prefs)
         DiagLog.write("Hotkey plan applied: primary=\(prefs.primaryModifier.rawValue) bindings=\(prefs.bindings.count) failures=\(failures.count)")
         return failures
+    }
+
+    /// 注册快捷键面板呼出键：无主修饰键语义，panelSummon 的 Hotkey 原样注册。
+    private func registerPanelSummon(_ prefs: HotkeyPreferences) {
+        guard let summon = prefs.panelSummon else { return }
+        if hotkeyManager.register(summon, handler: { [weak self] in
+            self?.showHotkeyPanel()
+        }) == nil {
+            DiagLog.write("HotkeyPanel summon register failed: keyCode=\(summon.keyCode) mods=\(summon.modifiers)")
+        }
+    }
+
+    /// 注册应用启动绑定：bundleID → 安装路径，主修饰键 [+ shift] + 键位 → 启动应用。
+    /// 与功能绑定冲突（同键码同 shift）的绑定跳过注册并写日志。
+    private func registerAppLaunchBindings(_ prefs: HotkeyPreferences) {
+        let appStore = AppLaunchBindingStore.load()
+        let conflictedKeyCodes = Set(appStore.conflicts(with: prefs).map(\.keyCode))
+        for binding in appStore.bindings {
+            if conflictedKeyCodes.contains(binding.keyCode) {
+                DiagLog.write("AppLaunchBinding skipped (conflicts with function binding): \(binding.bundleID) keyCode=\(binding.keyCode)")
+                continue
+            }
+            guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: binding.bundleID) else {
+                DiagLog.write("AppLaunchBinding skipped (app not found): \(binding.bundleID)")
+                continue
+            }
+            var modifiers = prefs.primaryModifier.carbonMask
+            if binding.usesShift { modifiers |= ModifierKey.shift }
+            let hotkey = Hotkey(keyCode: binding.keyCode, modifiers: modifiers)
+            if hotkeyManager.register(hotkey, handler: {
+                NSWorkspace.shared.openApplication(at: appURL, configuration: .init())
+            }) == nil {
+                DiagLog.write("AppLaunchBinding register failed: \(binding.bundleID) keyCode=\(binding.keyCode)")
+            }
+        }
+        if !appStore.bindings.isEmpty {
+            DiagLog.write("HotkeyPanel: app launch bindings registered=\(appStore.bindings.count - conflictedKeyCodes.count)/\(appStore.bindings.count)")
+        }
+    }
+
+    /// 快捷键面板内点击已绑功能键：与全局热键同一动作映射。
+    func runHotkeyFunction(id: String) {
+        hotkeyHandlers()[id]?()
+    }
+
+    /// 浮引快捷键面板。
+    @objc private func showHotkeyPanel() {
+        hotkeyPanelModule.showPanel()
     }
 
     /// 13 个功能的热键动作表（Alt 主键体系）。handler 内按模块启用状态过滤：

@@ -8,12 +8,17 @@ final class HotkeySettingsPaneView: NSView {
 
     /// 内存中的快捷键方案：所有改动先落这里，无冲突/清除时才 save + 重放注册。
     private var prefs: HotkeyPreferences
-    /// 正在录制组合键的功能 id；nil = 未在录制。
-    private var recordingId: String?
+    /// 录制目标：功能组合键（主修饰键 + 单键）或面板呼出键（无主修饰键语义）；nil = 未在录制。
+    private enum RecordingTarget {
+        case function(String)
+        case panelSummon
+    }
+    private var recordingTarget: RecordingTarget?
     private var keyMonitor: Any?
     private var mouseMonitor: Any?
 
     private var modifierControl: NSSegmentedControl!
+    private var summonButton: NSButton!
     private var bindingButtons: [String: NSButton] = [:]
     private var conflictLabel: NSTextField!
     private var failureLabel: NSTextField!
@@ -39,7 +44,7 @@ final class HotkeySettingsPaneView: NSView {
         titleLabel.textColor = UITheme.textPrimary
 
         let hintLabel = NSTextField(
-            labelWithString: "组合键 = 主修饰键 + 单键（可叠加 ⇧）。点击功能行右侧按钮后按下新组合键：⎋ 取消，点击任意处结束。")
+            labelWithString: "组合键 = 主修饰键 + 单键（可叠加 ⇧）。点击功能行右侧按钮后按下新组合键：⎋ 取消，点击任意处结束。面板呼出键无主修饰键（功能键直接按即呼出）。")
         hintLabel.font = .systemFont(ofSize: 12)
         hintLabel.textColor = UITheme.textSecondary
         hintLabel.lineBreakMode = .byWordWrapping
@@ -51,7 +56,23 @@ final class HotkeySettingsPaneView: NSView {
             trackingMode: .selectOne, target: self, action: #selector(modifierChanged(_:)))
         modifierControl.selectedSegment = PrimaryModifier.allCases.firstIndex(of: prefs.primaryModifier) ?? 0
         let modifierRow = makeRow(label: "全局主修饰键", controls: [modifierControl])
-        let modifierBox = makeGroupBox(title: "主修饰键", content: modifierRow)
+
+        // 面板呼出键：录制后无主修饰键直接注册（默认 F1）
+        summonButton = NSButton(title: "", target: self, action: #selector(summonClicked))
+        summonButton.bezelStyle = .rounded
+        summonButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 64).isActive = true
+        let summonClear = NSButton(title: "×", target: self, action: #selector(clearSummonClicked))
+        summonClear.isBordered = false
+        summonClear.toolTip = "清除面板呼出键"
+        summonClear.translatesAutoresizingMaskIntoConstraints = false
+        summonClear.widthAnchor.constraint(equalToConstant: 20).isActive = true
+        let summonRow = makeRow(label: "面板呼出键（快捷键面板）", controls: [summonButton, summonClear])
+
+        let modifierContent = NSStackView(views: [modifierRow, summonRow])
+        modifierContent.orientation = .vertical
+        modifierContent.alignment = .leading
+        modifierContent.spacing = 8
+        let modifierBox = makeGroupBox(title: "主修饰键", content: modifierContent)
 
         // 13 个功能行：分类色圆点 + 功能名 + 组合键按钮 + × 清除
         var rows: [NSView] = []
@@ -196,11 +217,22 @@ final class HotkeySettingsPaneView: NSView {
         for entry in HotkeyPreferences.catalog {
             refreshLabel(for: entry.id)
         }
+        refreshSummonLabel()
     }
 
     private func refreshLabel(for id: String) {
         guard let button = bindingButtons[id] else { return }
         button.title = prefs.displayLabel(for: id) ?? "无"
+    }
+
+    /// 面板呼出键显示名：功能键 F1~F12 用 functionKeyLabel，字母键用 letterLabel；nil = 无。
+    private func refreshSummonLabel() {
+        guard let summon = prefs.panelSummon else {
+            summonButton.title = "无"
+            return
+        }
+        summonButton.title = summon.functionKeyLabel
+            ?? (Hotkey.letterLabel(for: summon.keyCode) ?? "?")
     }
 
     /// AppDelegate.applyHotkeyPreferences 的 selector：本文件同时编入测试 target，
@@ -231,7 +263,7 @@ final class HotkeySettingsPaneView: NSView {
 
     private func startRecording(for id: String) {
         removeRecordingMonitors()
-        recordingId = id
+        recordingTarget = .function(id)
         bindingButtons[id]?.title = "按下组合键…"
         conflictLabel.isHidden = true
         // 录制期间消费所有按键：Esc 不得关闭窗口、字母键不得落进搜索框等
@@ -248,7 +280,7 @@ final class HotkeySettingsPaneView: NSView {
     }
 
     private func handleKeyDown(_ event: NSEvent) {
-        guard let id = recordingId else { return }
+        guard let target = recordingTarget else { return }
         let shiftHeld = event.modifierFlags.contains(.shift)
         switch HotkeyCapture.resolve(keyCode: UInt32(event.keyCode), shiftHeld: shiftHeld) {
         case .cancel:
@@ -257,15 +289,26 @@ final class HotkeySettingsPaneView: NSView {
             break   // 纯修饰键按下：继续等待组合键
         case .bind(let binding):
             endRecording()
-            commit(binding: binding, for: id)
+            switch target {
+            case .function(let id):
+                commit(binding: binding, for: id)
+            case .panelSummon:
+                // 呼出键无主修饰键语义：只取键码（⇧ 不入绑）
+                commitSummon(keyCode: binding.keyCode)
+            }
         }
     }
 
     private func endRecording() {
         removeRecordingMonitors()
-        guard let id = recordingId else { return }
-        recordingId = nil
-        refreshLabel(for: id)
+        guard let target = recordingTarget else { return }
+        recordingTarget = nil
+        switch target {
+        case .function(let id):
+            refreshLabel(for: id)
+        case .panelSummon:
+            refreshSummonLabel()
+        }
     }
 
     private func removeRecordingMonitors() {
@@ -295,6 +338,47 @@ final class HotkeySettingsPaneView: NSView {
         prefs.save()
         replayRegistrations()
         refreshLabel(for: id)
+    }
+
+    // MARK: - 面板呼出键录制
+
+    /// 点击「面板呼出键」按钮进入录制：Esc 取消、纯修饰键忽略、其他键入绑（无主修饰键语义）。
+    @objc private func summonClicked() {
+        startSummonRecording()
+    }
+
+    private func startSummonRecording() {
+        removeRecordingMonitors()
+        recordingTarget = .panelSummon
+        summonButton.title = "按下按键…"
+        conflictLabel.isHidden = true
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            self?.handleKeyDown(event)
+            return nil
+        }
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
+            self?.endRecording()
+            return nil
+        }
+    }
+
+    /// 呼出键提交：保存 Hotkey(keyCode:) + 重放注册（AppDelegate 原样注册，不叠主修饰键）。
+    private func commitSummon(keyCode: UInt32) {
+        prefs.panelSummon = Hotkey(keyCode: keyCode)
+        prefs.save()
+        replayRegistrations()
+        refreshSummonLabel()
+    }
+
+    @objc private func clearSummonClicked() {
+        endRecording()
+        guard prefs.panelSummon != nil else { return }
+        prefs.panelSummon = nil
+        prefs.save()
+        conflictLabel.isHidden = true
+        replayRegistrations()
+        refreshSummonLabel()
     }
 
     @objc private func modifierChanged(_ sender: NSSegmentedControl) {
