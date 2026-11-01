@@ -440,9 +440,9 @@ private final class ScrollTooltipLabelView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 8
-        layer?.backgroundColor = NSColor(srgbRed: 0.89, green: 0.89, blue: 0.89, alpha: 0.98).cgColor
+        layer?.backgroundColor = UITheme.toolbarBackground.cgColor
         layer?.borderWidth = 1
-        layer?.borderColor = NSColor.black.withAlphaComponent(0.06).cgColor
+        layer?.borderColor = UITheme.hairline.cgColor
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -450,7 +450,7 @@ private final class ScrollTooltipLabelView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: NSColor(calibratedWhite: 0.12, alpha: 1)
+            .foregroundColor: UITheme.chromeText
         ]
         let textWidth = (text as NSString).size(withAttributes: attrs).width
         // 垂直居中：先在行高内下移底边距，再抬升 descender 对应的高度得到基线 y

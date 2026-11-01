@@ -149,9 +149,9 @@ final class ScrollImageEditorWindow: NSPanel {
         // 顶部工具条
         let container = ToolbarContainerView(frame: NSRect(x: 0, y: h - toolbarHeight, width: w, height: toolbarHeight))
         container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor(srgbRed: 0.89, green: 0.89, blue: 0.89, alpha: 0.98).cgColor
+        container.layer?.backgroundColor = UITheme.toolbarBackground.cgColor
         container.layer?.borderWidth = 1
-        container.layer?.borderColor = NSColor.black.withAlphaComponent(0.06).cgColor
+        container.layer?.borderColor = UITheme.hairline.cgColor
         content.addSubview(container)
         toolbarContainer = container
         buildToolbarButtons(in: container)
@@ -219,7 +219,7 @@ final class ScrollImageEditorWindow: NSPanel {
             btn.layer?.cornerRadius = 6
             btn.attributedTitle = NSAttributedString(string: title, attributes: [
                 .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-                .foregroundColor: NSColor(calibratedWhite: 0.12, alpha: 1)
+                .foregroundColor: UITheme.chromeText
             ])
             btn.title = ""
             btn.tag = idx
@@ -237,7 +237,7 @@ final class ScrollImageEditorWindow: NSPanel {
         let undo = NSButton(frame: NSRect(x: x, y: y, width: size, height: size))
         undo.image = NSImage(systemSymbolName: "arrow.uturn.backward", accessibilityDescription: "撤销")
         undo.image?.isTemplate = true
-        undo.contentTintColor = NSColor(calibratedWhite: 0.12, alpha: 1)
+        undo.contentTintColor = UITheme.chromeText
         undo.isBordered = false
         undo.wantsLayer = true
         undo.layer?.cornerRadius = 6
@@ -304,7 +304,7 @@ final class ScrollImageEditorWindow: NSPanel {
         let btn = NSButton(frame: NSRect(x: x, y: y, width: 28, height: 28))
         btn.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip)
         btn.image?.isTemplate = true
-        btn.contentTintColor = NSColor(calibratedWhite: 0.12, alpha: 1)
+        btn.contentTintColor = UITheme.chromeText
         btn.isBordered = false
         btn.wantsLayer = true
         btn.layer?.cornerRadius = 6
@@ -325,7 +325,7 @@ final class ScrollImageEditorWindow: NSPanel {
         let btn = NSButton(frame: NSRect(x: x, y: y, width: 28, height: 28))
         btn.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip)
         btn.image?.isTemplate = true
-        btn.contentTintColor = NSColor(calibratedWhite: 0.12, alpha: 1)
+        btn.contentTintColor = UITheme.chromeText
         btn.isBordered = false
         btn.wantsLayer = true
         btn.layer?.cornerRadius = 6
@@ -345,7 +345,7 @@ final class ScrollImageEditorWindow: NSPanel {
         for (t, btn) in toolButtons {
             btn.layer?.backgroundColor = (t == tool)
                 ? NSColor.black.withAlphaComponent(0.14).cgColor
-                : NSColor.black.withAlphaComponent(0.04).cgColor
+                : UITheme.toolbarControl.cgColor
         }
     }
 
@@ -361,7 +361,7 @@ final class ScrollImageEditorWindow: NSPanel {
         for (idx, btn) in widthButtons.enumerated() {
             btn.layer?.backgroundColor = (idx == strokeWidthIndex)
                 ? NSColor.black.withAlphaComponent(0.14).cgColor
-                : NSColor.black.withAlphaComponent(0.04).cgColor
+                : UITheme.toolbarControl.cgColor
         }
     }
 
@@ -369,7 +369,7 @@ final class ScrollImageEditorWindow: NSPanel {
         undoButton?.isEnabled = !annotations.isEmpty
         undoButton?.contentTintColor = annotations.isEmpty
             ? NSColor.black.withAlphaComponent(0.2)
-            : NSColor(calibratedWhite: 0.12, alpha: 1)
+            : UITheme.chromeText
     }
 
     // MARK: - 动作

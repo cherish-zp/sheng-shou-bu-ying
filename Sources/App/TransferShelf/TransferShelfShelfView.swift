@@ -54,6 +54,8 @@ final class TransferShelfShelfView: NSView {
 
         effectView.material = TransferShelfLayoutSpec.panelMaterial
         effectView.blendingMode = .behindWindow
+        // 材质跟随系统外观（浅色系统渲出浅灰）；固定深色外观锁定浮引风格
+        effectView.appearance = NSAppearance(named: .darkAqua)
         effectView.state = .active
         effectView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(effectView)

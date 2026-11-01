@@ -31,6 +31,19 @@ final class UIThemeTests: XCTestCase {
         XCTAssertFalse(table.usesAlternatingRowBackgroundColors, "交替行浅色条与深色主题冲突")
     }
 
+    func test_toolbarTokens_areDark() {
+        // 亮度按“叠在黑底上”的合成结果计（半透明色的深浅由 alpha 参与）
+        func compositedBrightness(_ c: NSColor) -> Double {
+            let rgb = c.usingColorSpace(.deviceRGB)!
+            let a = rgb.alphaComponent
+            return (rgb.redComponent * a + rgb.greenComponent * a + rgb.blueComponent * a) / 3
+        }
+        XCTAssertLessThan(compositedBrightness(UITheme.toolbarBackground), 0.3, "工具条底必须是深色")
+        XCTAssertLessThan(compositedBrightness(UITheme.toolbarControl), 0.3)
+        XCTAssertLessThan(compositedBrightness(UITheme.chromeText), 1.0)
+        XCTAssertGreaterThan(compositedBrightness(UITheme.chromeText), 0.5, "chrome 文字应为亮色")
+    }
+
     func test_categoryColor_stableForSameKey() {
         XCTAssertEqual(UITheme.categoryColor(for: "screenshot"),
                        UITheme.categoryColor(for: "screenshot"))

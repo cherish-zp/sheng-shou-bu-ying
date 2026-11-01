@@ -47,6 +47,17 @@ public enum UITheme {
         return categoryPalette[index]
     }
 
+    // MARK: - 截图套件工具条（深色 chrome）
+
+    /// 工具条/浮层底色（近黑高不透明）。
+    public static let toolbarBackground = NSColor(srgbRed: 0.12, green: 0.12, blue: 0.15, alpha: 0.98)
+    /// 工具条上的次级控件底（透明白叠加）。
+    public static let toolbarControl = NSColor.white.withAlphaComponent(0.08)
+    /// 工具条分隔线。
+    public static let toolbarSeparator = NSColor.white.withAlphaComponent(0.12)
+    /// 工具条文字/单色图标色。
+    public static let chromeText = textPrimary
+
     // MARK: - 几何
 
     public static let panelCornerRadius: CGFloat = 14

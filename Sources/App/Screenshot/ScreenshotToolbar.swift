@@ -65,9 +65,9 @@ final class ScreenshotToolbar: NSWindow {
         container.autoresizingMask = [.width, .height]
         container.layer?.cornerRadius = 12
         container.layer?.masksToBounds = true
-        container.layer?.backgroundColor = NSColor(srgbRed: 0.89, green: 0.89, blue: 0.89, alpha: 0.98).cgColor
+        container.layer?.backgroundColor = UITheme.toolbarBackground.cgColor
         container.layer?.borderWidth = 1
-        container.layer?.borderColor = NSColor.black.withAlphaComponent(0.06).cgColor
+        container.layer?.borderColor = UITheme.hairline.cgColor
         contentView = container
 
         var x: CGFloat = 8
@@ -79,10 +79,10 @@ final class ScreenshotToolbar: NSWindow {
         cornerBtn.isBordered = false
         cornerBtn.wantsLayer = true
         cornerBtn.layer?.cornerRadius = 6
-        cornerBtn.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.04).cgColor
+        cornerBtn.layer?.backgroundColor = UITheme.toolbarControl.cgColor
         cornerBtn.attributedTitle = NSAttributedString(string: "圆角", attributes: [
             .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-            .foregroundColor: NSColor(calibratedWhite: 0.12, alpha: 1)
+            .foregroundColor: UITheme.chromeText
         ])
         cornerBtn.title = ""
         cornerBtn.toolTip = "圆角：点击循环切换半径"
@@ -108,7 +108,7 @@ final class ScreenshotToolbar: NSWindow {
         let cvBtn = NSButton(frame: NSRect(x: x + 6, y: y, width: btnSize, height: btnSize))
         cvBtn.image = NSImage(systemSymbolName: "square.on.square", accessibilityDescription: "画布")
         cvBtn.image?.isTemplate = true
-        cvBtn.contentTintColor = NSColor(calibratedWhite: 0.12, alpha: 1)
+        cvBtn.contentTintColor = UITheme.chromeText
         cvBtn.isBordered = false
         cvBtn.wantsLayer = true
         cvBtn.layer?.cornerRadius = 6
@@ -124,7 +124,7 @@ final class ScreenshotToolbar: NSWindow {
         let ub = NSButton(frame: NSRect(x: x + 4, y: y, width: btnSize, height: btnSize))
         ub.image = NSImage(systemSymbolName: "arrow.uturn.backward", accessibilityDescription: "撤销")
         ub.image?.isTemplate = true
-        ub.contentTintColor = NSColor(calibratedWhite: 0.12, alpha: 1)
+        ub.contentTintColor = UITheme.chromeText
         ub.isBordered = false
         ub.wantsLayer = true
         ub.layer?.cornerRadius = 6
@@ -141,7 +141,7 @@ final class ScreenshotToolbar: NSWindow {
         let moreBtn = NSButton(frame: NSRect(x: x + 4, y: y, width: btnSize, height: btnSize))
         moreBtn.image = NSImage(systemSymbolName: "ellipsis.circle", accessibilityDescription: "更多")
         moreBtn.image?.isTemplate = true
-        moreBtn.contentTintColor = NSColor(calibratedWhite: 0.12, alpha: 1)
+        moreBtn.contentTintColor = UITheme.chromeText
         moreBtn.isBordered = false
         moreBtn.wantsLayer = true
         moreBtn.layer?.cornerRadius = 6
@@ -156,7 +156,7 @@ final class ScreenshotToolbar: NSWindow {
         let delayBtn = NSButton(frame: NSRect(x: x + 4, y: y, width: btnSize, height: btnSize))
         delayBtn.image = NSImage(systemSymbolName: "timer", accessibilityDescription: "延时截图")
         delayBtn.image?.isTemplate = true
-        delayBtn.contentTintColor = NSColor(calibratedWhite: 0.12, alpha: 1)
+        delayBtn.contentTintColor = UITheme.chromeText
         delayBtn.isBordered = false
         delayBtn.wantsLayer = true
         delayBtn.layer?.cornerRadius = 6
@@ -171,7 +171,7 @@ final class ScreenshotToolbar: NSWindow {
         x += 8
         let sep = NSView(frame: NSRect(x: x, y: 8, width: 1, height: 32))
         sep.wantsLayer = true
-        sep.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.08).cgColor
+        sep.layer?.backgroundColor = UITheme.toolbarSeparator.cgColor
         container.addSubview(sep)
         x += 8
 
@@ -179,7 +179,7 @@ final class ScreenshotToolbar: NSWindow {
         let pBtn = NSButton(frame: NSRect(x: x, y: y, width: 28, height: 28))
         pBtn.image = NSImage(systemSymbolName: "paintpalette", accessibilityDescription: "主题")
         pBtn.image?.isTemplate = true
-        pBtn.contentTintColor = NSColor(calibratedWhite: 0.12, alpha: 1)
+        pBtn.contentTintColor = UITheme.chromeText
         pBtn.isBordered = false
         pBtn.wantsLayer = true
         pBtn.layer?.cornerRadius = 6
@@ -201,7 +201,7 @@ final class ScreenshotToolbar: NSWindow {
         x += 4
         let sep2 = NSView(frame: NSRect(x: x, y: 8, width: 1, height: 32))
         sep2.wantsLayer = true
-        sep2.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.08).cgColor
+        sep2.layer?.backgroundColor = UITheme.toolbarSeparator.cgColor
         container.addSubview(sep2)
         x += 8
 
@@ -221,7 +221,7 @@ final class ScreenshotToolbar: NSWindow {
         let btn = NSButton(frame: NSRect(x: x, y: y, width: size, height: size))
         btn.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         btn.image?.isTemplate = true
-        btn.contentTintColor = NSColor(calibratedWhite: 0.12, alpha: 1)
+        btn.contentTintColor = UITheme.chromeText
         btn.isBordered = false
         btn.wantsLayer = true
         btn.layer?.cornerRadius = 6
@@ -282,7 +282,7 @@ final class ScreenshotToolbar: NSWindow {
                             styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)
         panel.isOpaque = false
-        panel.backgroundColor = NSColor(srgbRed: 0.89, green: 0.89, blue: 0.89, alpha: 0.98)
+        panel.backgroundColor = UITheme.toolbarBackground
         panel.hasShadow = true
         panel.level = NSWindow.Level(rawValue: NSWindow.Level.screenSaver.rawValue + 3)
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -315,7 +315,7 @@ final class ScreenshotToolbar: NSWindow {
         customBtn.isBordered = false
         customBtn.attributedTitle = NSAttributedString(string: "自定义…", attributes: [
             .font: NSFont.systemFont(ofSize: 12, weight: .medium),
-            .foregroundColor: NSColor(calibratedWhite: 0.12, alpha: 1)
+            .foregroundColor: UITheme.chromeText
         ])
         customBtn.alignment = .center
         customBtn.target = self
@@ -467,9 +467,9 @@ final class ScreenshotToolbar: NSWindow {
         card.wantsLayer = true
         card.layer?.cornerRadius = 12
         card.layer?.masksToBounds = true
-        card.layer?.backgroundColor = NSColor(srgbRed: 0.89, green: 0.89, blue: 0.89, alpha: 0.98).cgColor
+        card.layer?.backgroundColor = UITheme.toolbarBackground.cgColor
         card.layer?.borderWidth = 1
-        card.layer?.borderColor = NSColor.black.withAlphaComponent(0.06).cgColor
+        card.layer?.borderColor = UITheme.hairline.cgColor
         panel.contentView?.addSubview(card)
 
         var dx: CGFloat = 8
@@ -477,11 +477,11 @@ final class ScreenshotToolbar: NSWindow {
             let btn = NSButton(frame: NSRect(x: dx, y: 8, width: btnWidth, height: 28))
             btn.wantsLayer = true
             btn.layer?.cornerRadius = 6
-            btn.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.04).cgColor
+            btn.layer?.backgroundColor = UITheme.toolbarControl.cgColor
             btn.isBordered = false
             btn.attributedTitle = NSAttributedString(string: "\(seconds)s", attributes: [
                 .font: NSFont.systemFont(ofSize: 12, weight: .medium),
-                .foregroundColor: NSColor(calibratedWhite: 0.12, alpha: 1)
+                .foregroundColor: UITheme.chromeText
             ])
             btn.title = ""
             btn.tag = seconds
@@ -538,16 +538,16 @@ final class ScreenshotToolbar: NSWindow {
         card.wantsLayer = true
         card.layer?.cornerRadius = 12
         card.layer?.masksToBounds = true
-        card.layer?.backgroundColor = NSColor(srgbRed: 0.89, green: 0.89, blue: 0.89, alpha: 0.98).cgColor
+        card.layer?.backgroundColor = UITheme.toolbarBackground.cgColor
         card.layer?.borderWidth = 1
-        card.layer?.borderColor = NSColor.black.withAlphaComponent(0.06).cgColor
+        card.layer?.borderColor = UITheme.hairline.cgColor
         panel.contentView?.addSubview(card)
 
         // 识字按钮（OCR 文字识别，弹结果面板）
         let ocrBtn = NSButton(frame: NSRect(x: 8, y: 8, width: 28, height: 28))
         ocrBtn.image = NSImage(systemSymbolName: "doc.text.viewfinder", accessibilityDescription: "识字")
         ocrBtn.image?.isTemplate = true
-        ocrBtn.contentTintColor = NSColor(calibratedWhite: 0.12, alpha: 1)
+        ocrBtn.contentTintColor = UITheme.chromeText
         ocrBtn.isBordered = false
         ocrBtn.wantsLayer = true
         ocrBtn.layer?.cornerRadius = 6
@@ -560,7 +560,7 @@ final class ScreenshotToolbar: NSWindow {
         let ocrCopyBtn = NSButton(frame: NSRect(x: 48, y: 8, width: 28, height: 28))
         ocrCopyBtn.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: "识字并复制")
         ocrCopyBtn.image?.isTemplate = true
-        ocrCopyBtn.contentTintColor = NSColor(calibratedWhite: 0.12, alpha: 1)
+        ocrCopyBtn.contentTintColor = UITheme.chromeText
         ocrCopyBtn.isBordered = false
         ocrCopyBtn.wantsLayer = true
         ocrCopyBtn.layer?.cornerRadius = 6
@@ -647,7 +647,7 @@ final class ScreenshotToolbar: NSWindow {
         for (t, btn) in toolButtons {
             btn.layer?.backgroundColor = (t == tool)
                 ? NSColor.black.withAlphaComponent(0.12).cgColor
-                : NSColor.black.withAlphaComponent(0.04).cgColor
+                : UITheme.toolbarControl.cgColor
         }
     }
 
@@ -682,11 +682,11 @@ final class ScreenshotToolbar: NSWindow {
         let active = CornerRounding.isEnabled(radius)
         cornerButton?.layer?.backgroundColor = active
             ? NSColor.systemBlue.withAlphaComponent(0.15).cgColor
-            : NSColor.black.withAlphaComponent(0.04).cgColor
+            : UITheme.toolbarControl.cgColor
         let title = active ? "圆\(Int(radius))" : "圆角"
         cornerButton?.attributedTitle = NSAttributedString(string: title, attributes: [
             .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-            .foregroundColor: NSColor(calibratedWhite: 0.12, alpha: 1)
+            .foregroundColor: UITheme.chromeText
         ])
     }
 
@@ -711,20 +711,20 @@ final class ScreenshotToolbar: NSWindow {
         card.wantsLayer = true
         card.layer?.cornerRadius = 12
         card.layer?.masksToBounds = true
-        card.layer?.backgroundColor = NSColor(srgbRed: 0.89, green: 0.89, blue: 0.89, alpha: 0.98).cgColor
+        card.layer?.backgroundColor = UITheme.toolbarBackground.cgColor
         card.layer?.borderWidth = 1
-        card.layer?.borderColor = NSColor.black.withAlphaComponent(0.06).cgColor
+        card.layer?.borderColor = UITheme.hairline.cgColor
         panel.contentView?.addSubview(card)
 
         // 阴影开关按钮
         let shBtn = NSButton(frame: NSRect(x: 8, y: 8, width: 50, height: 28))
         shBtn.wantsLayer = true
         shBtn.layer?.cornerRadius = 6
-        shBtn.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.04).cgColor
+        shBtn.layer?.backgroundColor = UITheme.toolbarControl.cgColor
         shBtn.isBordered = false
         shBtn.attributedTitle = NSAttributedString(string: "阴影", attributes: [
             .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-            .foregroundColor: NSColor(calibratedWhite: 0.12, alpha: 1)
+            .foregroundColor: UITheme.chromeText
         ])
         shBtn.title = ""
         shBtn.target = self
@@ -735,7 +735,7 @@ final class ScreenshotToolbar: NSWindow {
         // 阴影透明度标签
         let sLabel = NSTextField(labelWithString: "16%")
         sLabel.font = .systemFont(ofSize: 11, weight: .medium)
-        sLabel.textColor = NSColor(calibratedWhite: 0.12, alpha: 1)
+        sLabel.textColor = UITheme.chromeText
         sLabel.alignment = .center
         sLabel.frame = NSRect(x: 206, y: 14, width: 40, height: 16)
         card.addSubview(sLabel)
@@ -779,7 +779,7 @@ final class ScreenshotToolbar: NSWindow {
     func updateCanvasShadowButton(enabled: Bool) {
         shadowToggleButton?.layer?.backgroundColor = enabled
             ? NSColor.systemBlue.withAlphaComponent(0.15).cgColor
-            : NSColor.black.withAlphaComponent(0.04).cgColor
+            : UITheme.toolbarControl.cgColor
     }
 
     /// 更新阴影透明度显示。
@@ -912,9 +912,9 @@ private final class TooltipLabelView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.cornerRadius = 8
-        layer?.backgroundColor = NSColor(srgbRed: 0.89, green: 0.89, blue: 0.89, alpha: 0.98).cgColor
+        layer?.backgroundColor = UITheme.toolbarBackground.cgColor
         layer?.borderWidth = 1
-        layer?.borderColor = NSColor.black.withAlphaComponent(0.06).cgColor
+        layer?.borderColor = UITheme.hairline.cgColor
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -922,7 +922,7 @@ private final class TooltipLabelView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: NSColor(calibratedWhite: 0.12, alpha: 1)
+            .foregroundColor: UITheme.chromeText
         ]
         let textWidth = (text as NSString).size(withAttributes: attrs).width
         let baselineY = TooltipTextCentering.baselineY(
