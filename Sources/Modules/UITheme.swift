@@ -66,6 +66,18 @@ public enum UITheme {
 
     // MARK: - 便捷样式
 
+    /// 把窗口居中到目标屏（默认鼠标所在屏——用户视线所在处）。
+    public static func center(_ window: NSWindow, on screen: NSScreen? = nil) {
+        let target = screen
+            ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }
+            ?? NSScreen.main
+        guard let target = target else { return }
+        let frame = window.frame
+        window.setFrameOrigin(NSPoint(
+            x: target.frame.midX - frame.width / 2,
+            y: target.frame.midY - frame.height / 2))
+    }
+
     /// 窗口整体深色化：底色换面板色 + 外观强制 darkAqua。
     /// 所有功能窗口 show/init 时必须调用，否则窗口本体是系统白色。
     public static func applyDark(_ window: NSWindow) {

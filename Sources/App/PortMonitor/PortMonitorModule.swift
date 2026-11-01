@@ -12,6 +12,7 @@ final class PortMonitorModule: NSObject, AppModule {
     private var windowController: PortListWindowController?
 
     func perform() {
+        DiagLog.write("PortMonitorModule.perform: opening window")
         let controller = windowController ?? PortListWindowController(
             queryService: queryService, killService: killService)
         windowController = controller

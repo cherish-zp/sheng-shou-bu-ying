@@ -23,6 +23,7 @@ final class LauncherPanelController: NSObject {
         window.title = "启动器"
         window.isReleasedWhenClosed = false
         UITheme.applyDark(window)
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.center()
         let content = NSView(frame: NSRect(x: 0, y: 0, width: 460, height: 300))
         content.autoresizingMask = [.width, .height]
@@ -61,6 +62,7 @@ final class LauncherPanelController: NSObject {
     func showPanel() {
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+        UITheme.center(window)
         rebuildGrid()
     }
 

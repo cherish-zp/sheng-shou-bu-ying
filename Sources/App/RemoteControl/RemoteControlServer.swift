@@ -9,7 +9,9 @@ final class RemoteControlServer: NSObject {
     var onAction: ((String) -> Void)?
 
     /// 指令名 → 可触发动作白名单。
-    private let actions = ["screenshot", "lock", "reveal-desktop", "start-recording", "stop-recording"]
+    private let actions = ["screenshot", "lock", "reveal-desktop", "start-recording", "stop-recording",
+                           "open-menu", "open-port-monitor", "open-text-tools", "open-clipboard-history",
+                           "open-scratchpad", "open-translate", "open-dictation", "open-launcher", "open-shelf"]
 
     func start(port: UInt16 = 18777) {
         guard listener == nil else { return }
@@ -49,20 +51,20 @@ final class RemoteControlServer: NSObject {
             // GET /action/<name>
             guard let path = request.split(separator: "\r\n").first,
                   let start = path.range(of: "GET /action/"),
-                  let action = path[start.upperBound...].split(separator: " ").first.map(String.init),
-                  self.actions.contains(action) else {
+                  let action = path[start.upperBound...].split(separator: " ").first.map(String.init) else {
+                DiagLog.write("RemoteControl: unparsable request")
                 self.respond(connection, status: "404 Not Found", body: "unknown")
                 return
             }
-            DispatchQueue.main.async {
-                switch action {
-                case "screenshot": self.onAction?("screenshot")
-                case "lock": self.onAction?("lock")
-                case "reveal-desktop": self.onAction?("reveal-desktop")
-                case "start-recording": self.onAction?("start-recording")
-                case "stop-recording": self.onAction?("stop-recording")
-                default: break
-                }
+            DiagLog.write("RemoteControl: action=\(action)")
+            guard self.actions.contains(action) else {
+                self.respond(connection, status: "404 Not Found", body: "unknown")
+                return
+            }
+            // 白名单即单一事实源：放行的动作名直接转发给 onAction，
+            // 由 AppDelegate 统一分派（旧双 switch 会吞掉新增动作——已踩坑）。
+            DispatchQueue.main.async { [weak self] in
+                self?.onAction?(action)
             }
             self.respond(connection, status: "200 OK", body: "ok")
         }

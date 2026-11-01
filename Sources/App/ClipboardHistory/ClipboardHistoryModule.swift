@@ -76,6 +76,7 @@ final class ClipboardHistoryModule: NSObject, NSTableViewDataSource, NSTableView
         if window == nil { buildWindow() }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+        if let window = window { UITheme.center(window) }
         reload()
     }
 
@@ -86,6 +87,7 @@ final class ClipboardHistoryModule: NSObject, NSTableViewDataSource, NSTableView
         window.title = "剪贴板历史"
         window.isReleasedWhenClosed = false
         UITheme.applyDark(window)
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.center()
         self.window = window
 

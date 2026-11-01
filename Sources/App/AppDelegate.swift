@@ -34,10 +34,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             destinationFileURL: ToolConfig.fileURL)
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        if let statusImage = NSImage(named: "MenuBarIcon") {
+        // 状态栏图标用彩色 App 图标（黑方块 MenuBarIcon 在深色菜单栏上不可见）；
+        // 资产缺失时兜底系统符号。
+        if let appIcon = NSApp.applicationIconImage.copy() as? NSImage {
+            appIcon.size = NSSize(width: 18, height: 18)
+            statusItem.button?.image = appIcon
+        } else if let statusImage = NSImage(named: "MenuBarIcon") {
             statusImage.isTemplate = true
             statusItem.button?.image = statusImage
-        } else { // 资产缺失时兜底系统符号
+        } else {
             statusItem.button?.image = NSImage(
                 systemSymbolName: "hammer",
                 accessibilityDescription: AppBrand.displayName
@@ -125,10 +130,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 手机遥控：动作映射到现有能力；应用启动即开启本地网络服务
         remoteControlServer.onAction = { [weak self] action in
+            DiagLog.write("RemoteControl.onAction: \(action)")
             switch action {
             case "screenshot": self?.triggerScreenshot()
             case "lock": self?.lockScreen()
             case "reveal-desktop": self?.revealDesktop()
+            case "open-menu": self?.openStatusMenu()
+            case "open-port-monitor": self?.openPortMonitor()
+            case "open-text-tools": self?.showTextToolkit()
+            case "open-clipboard-history": self?.showClipboardHistory()
+            case "open-scratchpad": self?.showScratchPad()
+            case "open-translate": self?.showTranslatePanel()
+            case "open-dictation": self?.showDictation()
+            case "open-launcher": self?.showLauncher()
+            case "open-shelf": self?.transferShelfModule.perform()
             default: break
             }
         }
@@ -355,6 +370,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 菜单栏顶层「端口占用…」：打开占用窗口。
     @objc private func openPortMonitor() {
         portMonitorModule.perform()
+    }
+
+    /// 遥控/调试：弹开状态栏菜单（等效点击状态图标）。
+    func openStatusMenu() {
+        DispatchQueue.main.async { [weak self] in
+            self?.statusItem.button?.performClick(nil)
+        }
     }
 
     /// 轮询扩展容器里的"新建文件"请求队列，由本非沙盒进程真正创建文件。

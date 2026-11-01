@@ -65,6 +65,7 @@ final class TextToolkitWindowController: NSObject {
         window.title = "文本工具集"
         window.isReleasedWhenClosed = false
         UITheme.applyDark(window)
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.center()
 
         let content = NSView(frame: NSRect(x: 0, y: 0, width: 720, height: 480))
@@ -123,6 +124,7 @@ let copyButton = NSButton(title: "复制结果", target: self, action: #selector
     func showAndFocus() {
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+        UITheme.center(window)
         inputView.window?.makeFirstResponder(inputView)
     }
 

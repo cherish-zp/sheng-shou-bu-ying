@@ -42,6 +42,7 @@ final class PortListWindowController: NSObject, NSWindowDelegate, NSTableViewDat
         window.title = "端口占用"
         window.isReleasedWhenClosed = false
         UITheme.applyDark(window)
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.center()
 
         let content = NSView(frame: NSRect(x: 0, y: 0, width: 780, height: 500))
@@ -56,6 +57,7 @@ final class PortListWindowController: NSObject, NSWindowDelegate, NSTableViewDat
         // 菜单点击后窗口会藏在当前活跃应用窗口后面
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+        UITheme.center(window)
         refresh()
     }
 

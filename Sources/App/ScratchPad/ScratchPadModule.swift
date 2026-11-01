@@ -21,6 +21,7 @@ final class ScratchPadModule: NSObject, NSTextViewDelegate {
         if window == nil { buildWindow() }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+        if let window = window { UITheme.center(window) }
         loadIfNeeded()
     }
 
@@ -31,6 +32,7 @@ final class ScratchPadModule: NSObject, NSTextViewDelegate {
         window.title = "速记（自动保存 · 置顶）"
         window.isReleasedWhenClosed = false
         UITheme.applyDark(window)
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.level = .floating   // 置顶参考
         window.center()
         self.window = window
