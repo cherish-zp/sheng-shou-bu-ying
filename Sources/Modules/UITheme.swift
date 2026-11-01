@@ -81,13 +81,16 @@ public enum UITheme {
     /// 窗口流光化：透明底 + 浅色外观 + 异步注入流光玻璃背景层。
     /// 所有功能窗口 show/init 时必须调用；contentView 稍后设置也能生效（异步兜底）。
     public static func applyDark(_ window: NSWindow) {
-        window.backgroundColor = .clear
+        // 标题栏不在 contentView 内、玻璃管不到——底色必须是浅色可读（不能透明）
+        window.backgroundColor = panelBackground
+        window.titlebarAppearsTransparent = true
         window.appearance = NSAppearance(named: .aqua)
         DispatchQueue.main.async {
             guard let content = window.contentView else { return }
             // 已注入过则跳过（幂等）
             if content.subviews.contains(where: { $0 is FlowingGlassView }) { return }
-            let glass = FlowingGlassView(frame: content.bounds)
+            let glass = FlowingGlassView()
+            glass.frame = content.bounds
             glass.autoresizingMask = [.width, .height]
             content.addSubview(glass, positioned: .below, relativeTo: nil)
         }

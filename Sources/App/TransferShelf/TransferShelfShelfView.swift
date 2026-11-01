@@ -53,7 +53,8 @@ final class TransferShelfShelfView: NSView {
         layer?.borderWidth = TransferShelfLayoutSpec.panelHairlineWidth
 
         // 流光渐变垫底（withinWindow 玻璃折射它）
-        let flowGradient = FlowingGlassView(frame: bounds)
+        let flowGradient = FlowingGlassView()
+        flowGradient.frame = bounds
         flowGradient.autoresizingMask = [.width, .height]
         addSubview(flowGradient)
 

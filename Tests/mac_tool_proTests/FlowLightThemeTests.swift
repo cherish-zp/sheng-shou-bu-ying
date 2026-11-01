@@ -34,10 +34,23 @@ final class FlowLightThemeTests: XCTestCase {
         XCTAssertGreaterThan(cardBrightness, 0.6, "卡片应为浅玻璃")
     }
 
-    func test_flowingGlassView_createsWithWithinWindowBlending() {
+    func test_flowingGlass_structure_gradientBelowGlass() {
+        // 正确结构：渐变层在下、玻璃视图在上（withinWindow 折射渐变）
         let glass = FlowingGlassView()
-        XCTAssertEqual(glass.blendingMode, NSVisualEffectView.BlendingMode.withinWindow)
-        XCTAssertEqual(glass.material, .underPageBackground)
+        XCTAssertEqual(glass.effectView.blendingMode, NSVisualEffectView.BlendingMode.withinWindow)
+        XCTAssertEqual(glass.effectView.material, .underPageBackground)
         XCTAssertNotNil(glass.gradientLayer, "渐变层必须存在（流光载体）")
+        XCTAssertEqual(glass.subviews.count, 1)
+        XCTAssertTrue(glass.subviews[0] === glass.effectView, "玻璃视图必须是唯一子视图（覆盖渐变）")
+    }
+
+    func test_applyDark_titleBarReadable() {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.backgroundColor = .clear
+        UITheme.applyDark(window)
+        XCTAssertEqual(window.backgroundColor, UITheme.panelBackground,
+                       "标题栏底色必须为浅色可读（不能透明）")
+        XCTAssertTrue(window.titlebarAppearsTransparent, "标题栏透明化与玻璃统一")
     }
 }

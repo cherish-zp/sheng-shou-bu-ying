@@ -75,7 +75,8 @@ final class ScreenshotToolbar: NSWindow {
         container.layer?.borderWidth = 1
         container.layer?.borderColor = UITheme.hairline.cgColor
         // 流光玻璃垫底（所有按钮在其上层）
-        let flowingGlass = FlowingGlassView(frame: container.bounds)
+        let flowingGlass = FlowingGlassView()
+        flowingGlass.frame = container.bounds
         flowingGlass.autoresizingMask = [.width, .height]
         container.addSubview(flowingGlass, positioned: .below, relativeTo: nil)
         contentView = container

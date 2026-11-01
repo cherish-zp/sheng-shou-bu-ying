@@ -23,23 +23,19 @@ public enum FlowLightMotion {
     }
 }
 
-/// 流光玻璃视图：动画渐变背景 + withinWindow 毛玻璃折射。
-/// 作为窗口 contentView 最底层注入，上层内容直接排布。
-public final class FlowingGlassView: NSVisualEffectView {
+/// 流光玻璃视图：渐变层在底、毛玻璃（withinWindow）在上折射渐变——
+/// 材质与渐变必须是"上下兄弟"关系；渐变做子层会被材质盖住（无折射，已踩坑）。
+public final class FlowingGlassView: NSView {
 
-    let gradientLayer = CAGradientLayer()
-
-    public convenience init(frame: NSRect, reduceMotion: Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) {
-        self.init(reduceMotion: reduceMotion)
-        self.frame = frame
-    }
+    public let effectView: NSVisualEffectView
+    public let gradientLayer = CAGradientLayer()
 
     public init(reduceMotion: Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) {
+        effectView = NSVisualEffectView()
+        effectView.material = .underPageBackground
+        effectView.blendingMode = .withinWindow
+        effectView.state = .active
         super.init(frame: .zero)
-        // 玻璃：withinWindow 折射本窗口内的渐变层
-        material = .underPageBackground
-        blendingMode = .withinWindow
-        state = .active
 
         wantsLayer = true
         gradientLayer.type = .axial
@@ -48,6 +44,7 @@ public final class FlowingGlassView: NSVisualEffectView {
         gradientLayer.endPoint = CGPoint(x: 1, y: 1)
         layer?.addSublayer(gradientLayer)
 
+        addSubview(effectView)
         if FlowLightMotion.shouldAnimate(reduceMotion: reduceMotion) {
             startFlowAnimation()
         }
@@ -57,7 +54,7 @@ public final class FlowingGlassView: NSVisualEffectView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    /// 流光动画：颜色与渐变位置缓慢往返，GPU 合成、无 CPU 逐帧成本。
+    /// 流光动画：颜色与渐变位置缓慢往返。脱离窗口层级会丢动画，didMoveToWindow 重挂。
     private func startFlowAnimation() {
         let colors = FlowLightPalette.colors.map { $0.cgColor }
         let shifted = Array(colors.dropFirst()) + [colors[0]]
@@ -80,11 +77,21 @@ public final class FlowingGlassView: NSVisualEffectView {
         gradientLayer.add(locAnim, forKey: "flowLocations")
     }
 
+    public override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil, FlowLightMotion.shouldAnimate(
+            reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) else { return }
+        if gradientLayer.animation(forKey: "flowColors") == nil {
+            startFlowAnimation()
+        }
+    }
+
     public override func layout() {
         super.layout()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         gradientLayer.frame = bounds
+        effectView.frame = bounds
         CATransaction.commit()
     }
 }
