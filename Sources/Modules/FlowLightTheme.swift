@@ -23,19 +23,18 @@ public enum FlowLightMotion {
     }
 }
 
-/// 流光玻璃视图：渐变层在底、毛玻璃（withinWindow）在上折射渐变——
-/// 材质与渐变必须是"上下兄弟"关系；渐变做子层会被材质盖住（无折射，已踩坑）。
-public final class FlowingGlassView: NSView {
+/// 流光玻璃视图（NSVisualEffectView 子类）：材质之下是窗口桌面模糊，
+/// 渐变以 sublayer 叠在材质之上、内容之下——紫色流光透出且内容清晰。
+/// 动画健壮性：脱离窗口层级会丢动画，viewDidMoveToWindow 时重挂。
+public final class FlowingGlassView: NSVisualEffectView {
 
-    public let effectView: NSVisualEffectView
-    public let gradientLayer = CAGradientLayer()
+    let gradientLayer = CAGradientLayer()
 
     public init(reduceMotion: Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) {
-        effectView = NSVisualEffectView()
-        effectView.material = .underPageBackground
-        effectView.blendingMode = .withinWindow
-        effectView.state = .active
         super.init(frame: .zero)
+        material = .underPageBackground
+        blendingMode = .behindWindow   // 材质模糊桌面；渐变 sublayer 叠在材质之上
+        state = .active
 
         wantsLayer = true
         gradientLayer.type = .axial
@@ -44,7 +43,6 @@ public final class FlowingGlassView: NSView {
         gradientLayer.endPoint = CGPoint(x: 1, y: 1)
         layer?.addSublayer(gradientLayer)
 
-        addSubview(effectView)
         if FlowLightMotion.shouldAnimate(reduceMotion: reduceMotion) {
             startFlowAnimation()
         }
@@ -54,8 +52,8 @@ public final class FlowingGlassView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    /// 流光动画：颜色与渐变位置缓慢往返。脱离窗口层级会丢动画，didMoveToWindow 重挂。
-    private func startFlowAnimation() {
+    /// 流光动画：颜色与渐变位置缓慢往返（对比度拉开，流动可感知）。
+    func startFlowAnimation() {
         let colors = FlowLightPalette.colors.map { $0.cgColor }
         let shifted = Array(colors.dropFirst()) + [colors[0]]
 
@@ -68,7 +66,7 @@ public final class FlowingGlassView: NSView {
 
         let locAnim = CABasicAnimation(keyPath: "locations")
         locAnim.fromValue = [0.0, 0.35, 0.7, 1.0]
-        locAnim.toValue = [0.3, 0.6, 0.85, 1.0]
+        locAnim.toValue = [0.35, 0.65, 0.9, 1.0]
         locAnim.duration = FlowLightMotion.cycleDuration
         locAnim.autoreverses = true
         locAnim.repeatCount = .infinity
@@ -91,7 +89,6 @@ public final class FlowingGlassView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         gradientLayer.frame = bounds
-        effectView.frame = bounds
         CATransaction.commit()
     }
 }
