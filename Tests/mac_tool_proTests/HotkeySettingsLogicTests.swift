@@ -125,8 +125,11 @@ final class HotkeySettingsLogicTests: XCTestCase {
         for (index, pane) in panes.enumerated() where index != 1 {
             XCTAssertTrue(pane.isHidden, "分类 \(index) 的面板在选中「快捷键」时应隐藏")
         }
-        XCTAssertTrue(panes[1].subviews.contains { $0 is FlowingGlassView },
-                      "快捷键面板应注入流光玻璃")
+        // 流光玻璃统一在窗口级一层（contentView 底层），pane 内不再重复注入
+        XCTAssertTrue(window.contentView!.subviews.contains { $0 is FlowingGlassView },
+                      "设置窗口应注入流光玻璃（窗口级一层）")
+        XCTAssertFalse(panes[1].subviews.contains { $0 is FlowingGlassView },
+                       "pane 内不得重复注入玻璃（避免多层叠加）")
     }
 
     func test_hotkeyPane_threeModifierSegmentsAndThirteenRows() {

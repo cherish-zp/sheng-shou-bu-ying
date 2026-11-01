@@ -127,7 +127,8 @@ final class HotkeySettingsPaneView: NSView {
         UITheme.darkScroll(scroll)
         addSubview(scroll)
         scroll.documentView = content
-        UITheme.installFlowingGlass(in: self)
+        // 玻璃改由窗口级一层提供（SettingsWindow.applyDark 注入 contentView 底层），
+        // pane 保持透明让窗口玻璃透出；不再在 pane 内重复注入（避免多层玻璃叠加）
 
         NSLayoutConstraint.activate([
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor),

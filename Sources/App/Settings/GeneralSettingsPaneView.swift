@@ -17,10 +17,11 @@ final class GeneralSettingsPaneView: NSView {
     private func buildUI() {
         let titleLabel = NSTextField(labelWithString: "通用")
         titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
+        titleLabel.textColor = UITheme.textPrimary
 
         let hintLabel = NSTextField(labelWithString: "控制 Finder 右键工具与全局功能模块；关闭后热键和菜单入口同步停用。")
         hintLabel.font = .systemFont(ofSize: 12)
-        hintLabel.textColor = .secondaryLabelColor
+        hintLabel.textColor = UITheme.textSecondary
         hintLabel.lineBreakMode = .byWordWrapping
         hintLabel.maximumNumberOfLines = 2
 
@@ -36,7 +37,7 @@ final class GeneralSettingsPaneView: NSView {
         var toolRows: [NSView] = ToolRegistry.shared.tools.map(makeToolRow)
         if toolRows.isEmpty {
             let emptyLabel = NSTextField(labelWithString: "暂无可用工具")
-            emptyLabel.textColor = .tertiaryLabelColor
+            emptyLabel.textColor = UITheme.textSecondary
             toolRows = [emptyLabel]
         }
         let toolStack = NSStackView(views: toolRows)
@@ -95,10 +96,14 @@ final class GeneralSettingsPaneView: NSView {
         return button
     }
 
+    /// 分组框（流光浅色主题：填充透明让玻璃透出、hairline 描边、标题次级色）；
+    /// NSBox 需启用内容 Auto Layout 防塌缩（与 PinSettingsPaneView 同款约束）。
     private func makeGroupBox(title: String, content: NSView) -> NSBox {
         let box = NSBox()
         box.title = title
-        box.titleFont = .systemFont(ofSize: 13, weight: .medium)
+        box.fillColor = .clear
+        box.borderColor = UITheme.hairline
+        (box.titleCell as? NSTextFieldCell)?.textColor = UITheme.textSecondary
         box.contentView = content
         box.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([

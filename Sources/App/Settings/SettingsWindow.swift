@@ -44,12 +44,12 @@ final class SettingsWindow: NSWindow, NSWindowDelegate, NSTableViewDataSource, N
     // MARK: - UI 构建
 
     private func buildUI() {
-        let bg = NSVisualEffectView()
-        bg.material = .windowBackground
-        bg.blendingMode = .behindWindow
-        bg.state = .active
+        // 流光浅色玻璃主题：contentView 透明底，玻璃由 applyDark 在窗口级注入一层
+        // （对齐剪贴板/快捷键面板的窗口构建模式；pane 内不再各自注玻璃）。
+        let bg = NSView()
         bg.autoresizingMask = [.width, .height]
         contentView = bg
+        UITheme.applyDark(self)
 
         let split = NSSplitView()
         split.isVertical = true
@@ -57,12 +57,14 @@ final class SettingsWindow: NSWindow, NSWindowDelegate, NSTableViewDataSource, N
         split.translatesAutoresizingMaskIntoConstraints = false
         bg.addSubview(split)
 
-        // 左侧分类栏
-        let sidebar = NSVisualEffectView()
-        sidebar.material = .sidebar
-        sidebar.blendingMode = .behindWindow
-        sidebar.state = .active
+        // 左侧分类栏：透明容器（玻璃从底层透出）+ 右缘 hairline 分隔线
+        let sidebar = NSView()
         sidebar.translatesAutoresizingMaskIntoConstraints = false
+        let divider = NSView()
+        divider.wantsLayer = true
+        divider.layer?.backgroundColor = UITheme.hairline.cgColor
+        divider.translatesAutoresizingMaskIntoConstraints = false
+        sidebar.addSubview(divider)
 
         let scroll = NSScrollView()
         scroll.translatesAutoresizingMaskIntoConstraints = false
@@ -114,6 +116,11 @@ final class SettingsWindow: NSWindow, NSWindowDelegate, NSTableViewDataSource, N
             scroll.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
             scroll.topAnchor.constraint(equalTo: sidebar.topAnchor),
             scroll.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor),
+
+            divider.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            divider.widthAnchor.constraint(equalToConstant: 1),
+            divider.topAnchor.constraint(equalTo: sidebar.topAnchor),
+            divider.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor),
         ])
 
         tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
@@ -146,6 +153,7 @@ final class SettingsWindow: NSWindow, NSWindowDelegate, NSTableViewDataSource, N
         cell.identifier = Self.cellID
         let label = NSTextField(labelWithString: sidebarItems[row])
         label.font = .systemFont(ofSize: 13)
+        label.textColor = UITheme.textPrimary
         label.translatesAutoresizingMaskIntoConstraints = false
         cell.addSubview(label)
         cell.textField = label
@@ -154,6 +162,11 @@ final class SettingsWindow: NSWindow, NSWindowDelegate, NSTableViewDataSource, N
             label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
         ])
         return cell
+    }
+
+    /// 侧栏行：自绘浅色选中态（白半透明圆角卡片），替换系统蓝底强调样式。
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        SettingsSidebarRowView()
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
@@ -165,6 +178,25 @@ final class SettingsWindow: NSWindow, NSWindowDelegate, NSTableViewDataSource, N
         }
         // buildUI 早期（右侧面板尚未创建）也可能触发选中事件，容忍之
         applySelectedCategory(row)
+    }
+}
+
+/// 侧栏分类行视图：选中态画白半透明圆角卡片（cardBackground），未选中透明——
+/// 对齐流光浅色玻璃主题（系统默认蓝底强调与玻璃风格不符）。
+/// interiorBackgroundStyle 恒 .normal，让 cell 文字保持主题深色不被反白。
+private final class SettingsSidebarRowView: NSTableRowView {
+
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard selectionHighlightStyle != .none else { return }
+        let rect = bounds.insetBy(dx: 8, dy: 5)
+        let path = NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8)
+        UITheme.cardBackground.setFill()
+        path.fill()
+    }
+
+    override var interiorBackgroundStyle: NSView.BackgroundStyle {
+        get { .normal }
+        set { /* 保持 normal：自绘浅色选中底，文字恒深色 */ }
     }
 }
 
@@ -196,10 +228,11 @@ final class PinSettingsPaneView: NSView {
     private func buildUI() {
         let titleLabel = NSTextField(labelWithString: "贴图")
         titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
+        titleLabel.textColor = UITheme.textPrimary
 
         let hintLabel = NSTextField(labelWithString: "呼吸灯提示当前存在贴图；更改立即对已打开的贴图生效。")
         hintLabel.font = .systemFont(ofSize: 12)
-        hintLabel.textColor = .secondaryLabelColor
+        hintLabel.textColor = UITheme.textSecondary
 
         topBarRadio.target = self
         topBarRadio.action = #selector(styleChanged(_:))
@@ -230,7 +263,7 @@ final class PinSettingsPaneView: NSView {
         let valueLabels: [NSTextField] = [heightValueLabel, topInsetValueLabel]
         for label in valueLabels {
             label.font = .systemFont(ofSize: 12)
-            label.textColor = .secondaryLabelColor
+            label.textColor = UITheme.textSecondary
         }
 
         heightSlider.widthAnchor.constraint(equalToConstant: 140).isActive = true
@@ -274,10 +307,13 @@ final class PinSettingsPaneView: NSView {
     /// 分组框：NSBox 不会据替换后的 contentView 自动撑高（会塌缩成仅剩 16pt 标题条，
     /// 内容溢出叠压），必须启用内容 Auto Layout 并显式把边框绑定到内容。
     /// 顶部常数 = 标题区高度，其余 = 内容边距。
+    /// 流光浅色主题：填充透明（玻璃从底层透出）、hairline 描边、标题次级色。
     private func makeGroupBox(title: String, content: NSView) -> NSBox {
         let box = NSBox()
         box.title = title
-        box.titleFont = .systemFont(ofSize: 13, weight: .medium)
+        box.fillColor = .clear
+        box.borderColor = UITheme.hairline
+        (box.titleCell as? NSTextFieldCell)?.textColor = UITheme.textSecondary
         box.contentView = content
         NSLayoutConstraint.activate([
             box.topAnchor.constraint(equalTo: content.topAnchor, constant: -26),
@@ -292,6 +328,7 @@ final class PinSettingsPaneView: NSView {
     private func makeRow(label title: String, controls: [NSView]) -> NSView {
         let label = NSTextField(labelWithString: title)
         label.font = .systemFont(ofSize: 13)
+        label.textColor = UITheme.textPrimary
         label.widthAnchor.constraint(equalToConstant: 76).isActive = true
         let row = NSStackView(views: [label] + controls)
         row.orientation = .horizontal
@@ -402,10 +439,11 @@ final class RecordingSettingsPaneView: NSView {
     private func buildUI() {
         let titleLabel = NSTextField(labelWithString: "录屏")
         titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
+        titleLabel.textColor = UITheme.textPrimary
 
         let hintLabel = NSTextField(labelWithString: "F4 呼出录屏；更改立即生效于下一次录制。")
         hintLabel.font = .systemFont(ofSize: 12)
-        hintLabel.textColor = .secondaryLabelColor
+        hintLabel.textColor = UITheme.textSecondary
 
         for sw in [systemAudioSwitch, micSwitch] {
             sw.target = self
@@ -436,7 +474,7 @@ final class RecordingSettingsPaneView: NSView {
 
         let savePathLabel = NSTextField(labelWithString: RecordingConfig.defaultSaveDirectory.path)
         savePathLabel.font = .systemFont(ofSize: 11)
-        savePathLabel.textColor = .secondaryLabelColor
+        savePathLabel.textColor = UITheme.textSecondary
         savePathLabel.lineBreakMode = .byTruncatingMiddle
         let saveRow = makeRow(label: "保存到", controls: [savePathLabel])
         let saveStack = NSStackView(views: [saveRow])
@@ -462,10 +500,13 @@ final class RecordingSettingsPaneView: NSView {
     }
 
     /// 分组框：与 PinSettingsPaneView 同款（NSBox 需启用内容 Auto Layout 防塌缩）。
+    /// 流光浅色主题：填充透明（玻璃从底层透出）、hairline 描边、标题次级色。
     private func makeGroupBox(title: String, content: NSView) -> NSBox {
         let box = NSBox()
         box.title = title
-        box.titleFont = .systemFont(ofSize: 13, weight: .medium)
+        box.fillColor = .clear
+        box.borderColor = UITheme.hairline
+        (box.titleCell as? NSTextFieldCell)?.textColor = UITheme.textSecondary
         box.contentView = content
         NSLayoutConstraint.activate([
             box.topAnchor.constraint(equalTo: content.topAnchor, constant: -26),
@@ -480,6 +521,7 @@ final class RecordingSettingsPaneView: NSView {
     private func makeRow(label title: String, controls: [NSView]) -> NSView {
         let label = NSTextField(labelWithString: title)
         label.font = .systemFont(ofSize: 13)
+        label.textColor = UITheme.textPrimary
         label.widthAnchor.constraint(equalToConstant: 76).isActive = true
         let row = NSStackView(views: [label] + controls)
         row.orientation = .horizontal

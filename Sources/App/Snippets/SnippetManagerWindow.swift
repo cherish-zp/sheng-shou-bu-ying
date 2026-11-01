@@ -41,10 +41,9 @@ final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSo
     // MARK: - UI 构建
 
     private func buildUI() {
-        let bg = NSVisualEffectView()
-        bg.material = .windowBackground
-        bg.blendingMode = .behindWindow
-        bg.state = .active
+        // 流光浅色主题：透明底，玻璃由窗口级一层提供（设置窗口 contentView 底层），
+        // 不再叠 NSVisualEffectView 材质背衬
+        let bg = NSView()
         bg.translatesAutoresizingMaskIntoConstraints = false
         addSubview(bg)
 
@@ -87,7 +86,7 @@ final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSo
         emptyStateLabel = NSTextField(labelWithString: "")
         emptyStateLabel.translatesAutoresizingMaskIntoConstraints = false
         emptyStateLabel.font = .systemFont(ofSize: 12)
-        emptyStateLabel.textColor = .tertiaryLabelColor
+        emptyStateLabel.textColor = UITheme.textSecondary
         emptyStateLabel.alignment = .center
         emptyStateLabel.maximumNumberOfLines = 2
         bg.addSubview(emptyStateLabel)
@@ -116,8 +115,9 @@ final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSo
         let editorBox = NSView()
         editorBox.wantsLayer = true
         editorBox.layer?.cornerRadius = 6
-        editorBox.layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
-        editorBox.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.5).cgColor
+        // 流光浅色主题：白半透明卡片底 + hairline 描边（玻璃上保持可读）
+        editorBox.layer?.backgroundColor = UITheme.cardBackground.cgColor
+        editorBox.layer?.borderColor = UITheme.hairline.cgColor
         editorBox.layer?.borderWidth = 1
         editorBox.translatesAutoresizingMaskIntoConstraints = false
         bg.addSubview(editorBox)
@@ -133,6 +133,7 @@ final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSo
         contentField.allowsUndo = true
         contentField.delegate = self
         contentField.font = .systemFont(ofSize: 13)
+        contentField.textColor = UITheme.textPrimary
         contentField.backgroundColor = .clear
         contentField.autoresizingMask = [.width]
         contentField.textContainerInset = NSSize(width: 8, height: 8)
@@ -198,7 +199,7 @@ final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSo
         let label = NSTextField(labelWithString: text)
         label.translatesAutoresizingMaskIntoConstraints = false
         label.font = .systemFont(ofSize: 11)
-        label.textColor = .secondaryLabelColor
+        label.textColor = UITheme.textSecondary
         return label
     }
 
@@ -212,7 +213,7 @@ final class SnippetManagerView: NSView, NSSearchFieldDelegate, NSTableViewDataSo
         button.isBordered = true
         button.bezelStyle = .texturedRounded
         button.controlSize = .small
-        button.contentTintColor = .secondaryLabelColor
+        button.contentTintColor = UITheme.textSecondary
         button.target = self
         button.action = action
         button.widthAnchor.constraint(equalToConstant: 28).isActive = true
@@ -397,16 +398,25 @@ final class SnippetCellView: NSTableCellView {
     private let keyLabel = NSTextField(labelWithString: "")
     private let previewLabel = NSTextField(labelWithString: "")
 
+    /// 选中行是系统强调蓝底：文字反白保证可读；未选中行用主题深色。
+    override var backgroundStyle: NSView.BackgroundStyle {
+        didSet {
+            let emphasized = backgroundStyle == .emphasized
+            keyLabel.textColor = emphasized ? .alternateSelectedControlTextColor : UITheme.textPrimary
+            previewLabel.textColor = emphasized ? .alternateSelectedControlTextColor : UITheme.textSecondary
+        }
+    }
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         keyLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        keyLabel.textColor = .labelColor
+        keyLabel.textColor = UITheme.textPrimary
         keyLabel.lineBreakMode = .byTruncatingTail
         keyLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(keyLabel)
 
         previewLabel.font = .systemFont(ofSize: 11)
-        previewLabel.textColor = .tertiaryLabelColor
+        previewLabel.textColor = UITheme.textSecondary
         previewLabel.lineBreakMode = .byTruncatingTail
         previewLabel.maximumNumberOfLines = 1
         previewLabel.translatesAutoresizingMaskIntoConstraints = false
