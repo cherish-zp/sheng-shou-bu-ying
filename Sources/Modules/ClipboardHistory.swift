@@ -1,4 +1,55 @@
+import AppKit
 import Foundation
+import ImageIO
+
+/// 剪贴板图片条目的缩略图与行高度量（纯逻辑，TDD）。
+/// 图片条目此前只渲染「图片 W×H」文字、行高压在 34pt——用户看不到图片实际内容。
+/// 卡片式布局：缩略图宽度撑满条目、高度按图片宽高比，超宽/超高夹在上下限内。
+public enum ClipboardThumbnail {
+
+    /// 小图缩略图长边上限（pt），小图不放大。
+    public static let maxThumbnailPixel: CGFloat = 72
+    /// 卡片缩略图高度上限（pt）：竖长图不至于占满整窗。
+    public static let maxThumbnailHeight: CGFloat = 140
+    /// 卡片缩略图高度下限（pt）：超宽图不至于一条线看不清。
+    public static let minThumbnailHeight: CGFloat = 44
+    /// 图片行内左右留白。
+    public static let imageRowHorizontalInset: CGFloat = 8
+    /// 缩略图下方文字带（间距 4 + 文字 18 + 底部 8）。
+    public static let imageRowTextBand: CGFloat = 30
+    /// 图片行上下留白。
+    public static let imageRowVerticalInset: CGFloat = 8
+
+    /// PNG data → NSImage（用于渲染）；解码失败返回 nil。
+    public static func make(fromPNG data: Data) -> NSImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let decoded = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        return NSImage(cgImage: decoded,
+                       size: NSSize(width: decoded.width, height: decoded.height))
+    }
+
+    /// 卡片缩略图尺寸：宽度撑满可用宽度，高度按图片宽高比夹在 [min, max]；
+    /// 未知尺寸按方图（1:1）处理。
+    public static func thumbnailSize(pixelWidth: CGFloat, pixelHeight: CGFloat,
+                                     availableWidth: CGFloat) -> NSSize {
+        let width = max(availableWidth, 1)
+        guard pixelWidth > 0, pixelHeight > 0 else {
+            return NSSize(width: width, height: min(width, maxThumbnailHeight))
+        }
+        let height = min(max(width * pixelHeight / pixelWidth, minThumbnailHeight), maxThumbnailHeight)
+        return NSSize(width: width, height: height)
+    }
+
+    /// 行高：图片行 = 缩略图高 + 文字带 + 上下留白；其余紧凑 34pt。
+    public static func rowHeight(for kind: ClipboardHistoryItem.Kind,
+                                 pixelWidth: CGFloat = 0, pixelHeight: CGFloat = 0,
+                                 availableWidth: CGFloat = 0) -> CGFloat {
+        guard kind == .image else { return 34 }
+        return thumbnailSize(pixelWidth: pixelWidth, pixelHeight: pixelHeight,
+                             availableWidth: availableWidth).height
+            + imageRowTextBand + imageRowVerticalInset * 2
+    }
+}
 
 /// 剪贴板历史条目（文本；图片/文件以负载字符串记录）。
 public struct ClipboardHistoryItem: Codable, Equatable, Identifiable {

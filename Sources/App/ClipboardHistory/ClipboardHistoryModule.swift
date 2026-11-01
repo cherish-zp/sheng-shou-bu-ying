@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 
 /// 剪贴板历史：1 秒轮询 changeCount 捕获变更（文本/图片/文件），持久化到
 /// App Support；深色窗口展示，点击条目回写剪贴板，星标收藏置顶。
@@ -14,6 +15,10 @@ final class ClipboardHistoryModule: NSObject, NSTableViewDataSource, NSTableView
     private var window: NSWindow?
     private var tableView: NSTableView?
     private var displayed: [ClipboardHistoryItem] = []
+    /// 缩略图缓存：避免每次 reload 重复解码 PNG。
+    private var thumbnailCache: [UUID: NSImage] = [:]
+    /// 图片像素尺寸缓存（ImageIO 属性读取，不解码像素）——行高计算用。
+    private var imageSizeCache: [UUID: NSSize] = [:]
 
     init(storageURL: URL? = nil) {
         let dir = AppSupportDirectory.url
@@ -140,6 +145,37 @@ final class ClipboardHistoryModule: NSObject, NSTableViewDataSource, NSTableView
 
     func numberOfRows(in tableView: NSTableView) -> Int { displayed.count }
 
+    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+        guard row < displayed.count else { return 34 }
+        let item = displayed[row]
+        guard item.kind == .image else { return ClipboardThumbnail.rowHeight(for: item.kind) }
+        let size = cachedPixelSize(for: item)
+        let available = tableView.bounds.width - ClipboardThumbnail.imageRowHorizontalInset * 2
+        return ClipboardThumbnail.rowHeight(for: .image, pixelWidth: size.width,
+                                            pixelHeight: size.height, availableWidth: available)
+    }
+
+    private func cachedPixelSize(for item: ClipboardHistoryItem) -> NSSize {
+        if let size = imageSizeCache[item.id] { return size }
+        var size = NSSize(width: 0, height: 0)
+        if let data = item.imageData,
+           let source = CGImageSourceCreateWithData(data as CFData, nil),
+           let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
+            size = NSSize(width: props[kCGImagePropertyPixelWidth] as? CGFloat ?? 0,
+                          height: props[kCGImagePropertyPixelHeight] as? CGFloat ?? 0)
+        }
+        imageSizeCache[item.id] = size
+        return size
+    }
+
+    private func thumbnail(for item: ClipboardHistoryItem) -> NSImage? {
+        if let cached = thumbnailCache[item.id] { return cached }
+        guard let data = item.imageData,
+              let thumb = ClipboardThumbnail.make(fromPNG: data) else { return nil }
+        thumbnailCache[item.id] = thumb
+        return thumb
+    }
+
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let item = displayed[row]
 
@@ -149,6 +185,57 @@ final class ClipboardHistoryModule: NSObject, NSTableViewDataSource, NSTableView
             button.isBordered = false
             button.tag = row
             return button
+        }
+
+        // 图片条目：卡片式大缩略图（宽度撑满、高度按宽高比）+ 下方尺寸文字
+        if item.kind == .image {
+            let cell = tableView.makeView(withIdentifier: NSUserInterfaceItemIdentifier("clip-image-cell"), owner: nil) as? NSTableCellView
+                ?? {
+                    let cell = NSTableCellView()
+                    let imageView = NSImageView()
+                    imageView.translatesAutoresizingMaskIntoConstraints = false
+                    imageView.imageScaling = .scaleProportionallyDown
+                    imageView.wantsLayer = true
+                    imageView.layer?.cornerRadius = 8
+                    imageView.layer?.masksToBounds = true
+                    let field = NSTextField(labelWithString: "")
+                    field.font = .systemFont(ofSize: 11)
+                    field.lineBreakMode = .byTruncatingTail
+                    field.translatesAutoresizingMaskIntoConstraints = false
+                    cell.addSubview(imageView)
+                    cell.addSubview(field)
+                    cell.imageView = imageView
+                    cell.textField = field
+                    let thumbHeight = imageView.heightAnchor.constraint(equalToConstant: 100)
+                    thumbHeight.identifier = "thumbHeight"   // 复用时按比例更新
+                    NSLayoutConstraint.activate([
+                        imageView.topAnchor.constraint(equalTo: cell.topAnchor,
+                                                       constant: ClipboardThumbnail.imageRowVerticalInset),
+                        imageView.leadingAnchor.constraint(equalTo: cell.leadingAnchor,
+                                                           constant: ClipboardThumbnail.imageRowHorizontalInset),
+                        imageView.trailingAnchor.constraint(equalTo: cell.trailingAnchor,
+                                                            constant: -ClipboardThumbnail.imageRowHorizontalInset),
+                        thumbHeight,
+                        field.topAnchor.constraint(equalTo: imageView.bottomAnchor, constant: 4),
+                        field.leadingAnchor.constraint(equalTo: cell.leadingAnchor,
+                                                       constant: ClipboardThumbnail.imageRowHorizontalInset),
+                        field.trailingAnchor.constraint(equalTo: cell.trailingAnchor,
+                                                        constant: -ClipboardThumbnail.imageRowHorizontalInset),
+                    ])
+                    return cell
+                }()
+            let pixelSize = cachedPixelSize(for: item)
+            let thumbSize = ClipboardThumbnail.thumbnailSize(
+                pixelWidth: pixelSize.width, pixelHeight: pixelSize.height,
+                availableWidth: tableView.bounds.width - ClipboardThumbnail.imageRowHorizontalInset * 2)
+            if let heightConstraint = cell.imageView?.constraints
+                .first(where: { $0.identifier == "thumbHeight" }) {
+                heightConstraint.constant = thumbSize.height
+            }
+            cell.imageView?.image = thumbnail(for: item)
+            cell.textField?.stringValue = item.text
+            cell.textField?.textColor = item.isFavorite ? UITheme.warning : UITheme.textSecondary
+            return cell
         }
 
         let prefix: String
