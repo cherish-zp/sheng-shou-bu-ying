@@ -66,14 +66,13 @@ final class TextToolkitWindowController: NSObject {
         window.isReleasedWhenClosed = false
         UITheme.applyDark(window)
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        window.center()
 
         let content = NSView(frame: NSRect(x: 0, y: 0, width: 720, height: 480))
         content.autoresizingMask = [.width, .height]
         window.contentView = content
         UITheme.stylePanel(content)
 
-        // 工具按钮排
+        // 装配顺序：全部 addSubview 后再激活约束（跨层级激活约束会 NSException 崩溃）
         let stack = NSStackView()
         stack.orientation = .horizontal
         stack.spacing = 6
@@ -86,9 +85,10 @@ final class TextToolkitWindowController: NSObject {
             stack.addArrangedSubview(button)
         }
         content.addSubview(stack)
+        content.addSubview(inputScroll)
+        content.addSubview(outputScroll)
 
-        
-let copyButton = NSButton(title: "复制结果", target: self, action: #selector(copyOutput))
+        let copyButton = NSButton(title: "复制结果", target: self, action: #selector(copyOutput))
         copyButton.bezelStyle = .rounded
         copyButton.controlSize = .small
         copyButton.translatesAutoresizingMaskIntoConstraints = false
