@@ -68,7 +68,10 @@ public enum UITheme {
 
     /// 统一流光注入点（幂等）：把 FlowingGlassView 垫到宿主视图最底层，
     /// 全部面板/窗口/子面板共用——增删流光只改这一处。
+    /// 宿主必须 layer-backed：macOS 26 实测，非 layer-backed 窗口中 layer-backed
+    /// 玻璃的自定义图层内容不被合成（图层树正常、屏幕全白）。
     public static func installFlowingGlass(in view: NSView) {
+        view.wantsLayer = true
         guard !view.subviews.contains(where: { $0 is FlowingGlassView }) else { return }
         let glass = FlowingGlassView()
         glass.frame = view.bounds

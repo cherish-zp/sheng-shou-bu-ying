@@ -48,6 +48,7 @@ final class PortListWindowController: NSObject, NSWindowDelegate, NSTableViewDat
         window.contentView = content
         content.autoresizingMask = [.width, .height]
         buildLayout(in: content)
+        UITheme.applyDark(window)   // 含流光注入（宿主翻转 layer-backed）
         window.delegate = self
     }
 

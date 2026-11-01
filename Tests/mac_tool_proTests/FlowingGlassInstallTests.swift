@@ -36,4 +36,15 @@ final class FlowingGlassInstallTests: XCTestCase {
         XCTAssertEqual(glass.frame.width, 400, "玻璃必须跟随宿主尺寸（autoresizing）")
         XCTAssertEqual(glass.frame.height, 300)
     }
+
+    func test_install_enablesLayerBackingOnHost() {
+        // 白屏根因（macOS 26 实测）：非 layer-backed 宿主窗口中，layer-backed 玻璃的
+        // 自定义图层内容不被合成——玻璃在图层树里、颜色/动画全正常，屏幕却全白。
+        // 注入点必须把宿主翻成 layer-backed（截图工具条正是因此可见）。
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 100, height: 80))
+        XCTAssertFalse(view.wantsLayer)
+        UITheme.installFlowingGlass(in: view)
+        XCTAssertTrue(view.wantsLayer,
+                      "宿主必须 layer-backed，否则玻璃图层在混合背衬下不合成（白屏根因）")
+    }
 }

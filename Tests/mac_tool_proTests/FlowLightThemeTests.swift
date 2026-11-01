@@ -63,7 +63,9 @@ final class FlowLightThemeTests: XCTestCase {
         content.addSubview(scroll)
         content.layoutSubtreeIfNeeded()
 
-        let bmp = try XCTUnwrap(content.bitmapImageRepForCachingDisplay(in: content.bounds))
+        guard let bmp = content.bitmapImageRepForCachingDisplay(in: content.bounds) else {
+            return XCTFail("bitmap nil")
+        }
         content.cacheDisplay(in: content.bounds, to: bmp)
 
         var saturated = 0
@@ -73,6 +75,41 @@ final class FlowLightThemeTests: XCTestCase {
             if (comps.max() ?? 0) - (comps.min() ?? 0) > 0.1 { saturated += 1 }
         }
         XCTAssertGreaterThanOrEqual(saturated, 2, "app 同构必须渲染渐变（\(saturated)/4 饱和）")
+    }
+
+    /// 1:1 复刻 app 窗口结构（含 backgroundColor/titlebar 透明），定位白屏层。
+    func test_appWindowStructure_rendersGradient() throws {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 200),
+                              styleMask: [.titled, .closable, .resizable],
+                              backing: .buffered, defer: false)
+        window.backgroundColor = UITheme.panelBackground
+        window.titlebarAppearsTransparent = true
+        window.appearance = NSAppearance(named: .aqua)
+
+        let content = FlowingGlassView()
+        content.frame = NSRect(x: 0, y: 0, width: 200, height: 200)
+        window.contentView = content   // contentView 即流光玻璃
+
+        let scroll = NSScrollView(frame: content.bounds)
+        scroll.drawsBackground = false
+        let table = NSTableView()
+        table.backgroundColor = .clear
+        scroll.documentView = table
+        content.addSubview(scroll)
+        content.layoutSubtreeIfNeeded()
+
+        guard let bmp = content.bitmapImageRepForCachingDisplay(in: content.bounds) else {
+            return XCTFail("bitmap nil")
+        }
+        content.cacheDisplay(in: content.bounds, to: bmp)
+
+        var saturated = 0
+        for (x, y) in [(50, 50), (150, 50), (50, 150), (150, 150)] {
+            guard let c = bmp.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+            let comps = [c.redComponent, c.greenComponent, c.blueComponent]
+            if (comps.max() ?? 0) - (comps.min() ?? 0) > 0.1 { saturated += 1 }
+        }
+        XCTAssertGreaterThanOrEqual(saturated, 3, "app 同构（含 titlebar 透明）必须渲染渐变")
     }
 
     func test_flowingGlass_rendersSaturatedPixels() throws {
