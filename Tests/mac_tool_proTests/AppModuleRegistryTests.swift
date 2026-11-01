@@ -1,6 +1,9 @@
 import XCTest
 
-/// TDD: App 级功能模块注册表 - 注册/查找/启用状态/把启用模块绑定到热键。
+/// TDD: App 级功能模块注册表 - 注册/查找/启用状态。
+/// 热键注册已统一迁移到 HotkeyManager.applyPreferences（Alt 主键方案），
+/// 注册表不再绑定热键；「启用过滤」由 AppDelegate 的 guarded handler 闭包承担，
+/// 其行为在 HotkeyApplyHandlersTests 覆盖。
 final class AppModuleRegistryTests: XCTestCase {
 
     func test_register_andFind() {
@@ -16,61 +19,29 @@ final class AppModuleRegistryTests: XCTestCase {
         XCTAssertTrue(registry.isEnabled("screenshot"))
     }
 
-    func test_enabledModule_hotkeyTriggersPerform() {
-        let registrar = FakeHotkeyRegistrar()
-        let registry = makeRegistry(hotkeyManager: HotkeyManager(registrar: registrar))
-        let module = FakeModule(id: "screenshot", hotkey: .f1)
-        registry.register(module)
-
-        let id = registrar.registered.first(where: { $0.value == module.defaultHotkey })?.key
-        XCTAssertNotNil(id, "启用模块应已注册热键")
-        registrar.onTrigger?(id!)
-        XCTAssertEqual(module.performCount, 1)
-    }
-
-    func test_disableModule_unregistersHotkey() {
-        let registrar = FakeHotkeyRegistrar()
-        let registry = makeRegistry(hotkeyManager: HotkeyManager(registrar: registrar))
-        let module = FakeModule(id: "screenshot", hotkey: .f1)
-        registry.register(module)
+    func test_setEnabled_persistsAcrossInstances() {
+        let suiteName = "AppModuleRegistryTests.persist"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let registry = AppModuleRegistry(
+            hotkeyManager: HotkeyManager(registrar: FakeHotkeyRegistrar()),
+            configDefaults: defaults)
+        registry.register(FakeModule(id: "screenshot"))
         registry.setEnabled("screenshot", false)
 
-        XCTAssertNil(registrar.registered.first(where: { $0.value == module.defaultHotkey }))
-        XCTAssertTrue(registrar.registered.isEmpty)
+        let reloaded = AppModuleRegistry(
+            hotkeyManager: HotkeyManager(registrar: FakeHotkeyRegistrar()),
+            configDefaults: defaults)
+        reloaded.register(FakeModule(id: "screenshot"))
+        XCTAssertFalse(reloaded.isEnabled("screenshot"), "启用状态必须持久化")
+        defaults.removePersistentDomain(forName: suiteName)
     }
 
-    func test_reEnable_rebindsHotkey() {
-        let registrar = FakeHotkeyRegistrar()
-        let registry = makeRegistry(hotkeyManager: HotkeyManager(registrar: registrar))
-        let module = FakeModule(id: "screenshot", hotkey: .f1)
-        registry.register(module)
-        registry.setEnabled("screenshot", false)
-        registry.setEnabled("screenshot", true)
-
-        let id = registrar.registered.first(where: { $0.value == module.defaultHotkey })?.key
-        XCTAssertNotNil(id)
-        registrar.onTrigger?(id!)
-        XCTAssertEqual(module.performCount, 1)
-    }
-
-    func test_moduleWithoutHotkey_registersNothing() {
-        let registrar = FakeHotkeyRegistrar()
-        let registry = makeRegistry(hotkeyManager: HotkeyManager(registrar: registrar))
-        let module = FakeModule(id: "portMonitor", hotkey: nil)
-        registry.register(module)
-
-        XCTAssertTrue(registrar.registered.isEmpty, "无热键模块不得注册任何全局热键")
-
-        registry.setEnabled("portMonitor", false)
-        registry.setEnabled("portMonitor", true)
-        XCTAssertTrue(registrar.registered.isEmpty, "启停切换也不得注册热键")
-    }
-
-    private func makeRegistry(hotkeyManager: HotkeyManager? = nil) -> AppModuleRegistry {
+    private func makeRegistry() -> AppModuleRegistry {
         let defaults = UserDefaults(suiteName: "AppModuleRegistryTests")!
         defaults.removePersistentDomain(forName: "AppModuleRegistryTests")
         return AppModuleRegistry(
-            hotkeyManager: hotkeyManager ?? HotkeyManager(registrar: FakeHotkeyRegistrar()),
+            hotkeyManager: HotkeyManager(registrar: FakeHotkeyRegistrar()),
             configDefaults: defaults
         )
     }
@@ -81,7 +52,7 @@ final class FakeModule: AppModule {
     let title: String
     let defaultHotkey: Hotkey?
     var performCount = 0
-    init(id: String, hotkey: Hotkey? = .f1) {
+    init(id: String, hotkey: Hotkey? = nil) {
         self.id = id
         self.title = id
         self.defaultHotkey = hotkey

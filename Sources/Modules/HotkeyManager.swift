@@ -49,4 +49,29 @@ public final class HotkeyManager {
     public func dispatch(id: UInt32) {
         idToHandler[id]?()
     }
+
+    /// 应用整套快捷键方案（Alt 主键体系）：先注销全部现有热键，再按方案注册。
+    /// 冲突的绑定组不注册（进失败表）；系统级注册失败也进失败表——由 UI 提示，
+    /// 此前失败只写日志、用户完全无感知。
+    /// 返回失败表：功能 id → 解析出的 Hotkey。
+    @discardableResult
+    public func applyPreferences(_ preferences: HotkeyPreferences,
+                                 handlers: [String: () -> Void]) -> [String: Hotkey] {
+        for hotkey in hotkeyToID.keys { unregister(hotkey) }
+
+        var failures: [String: Hotkey] = [:]
+        let conflicted = Set(preferences.bindingConflictGroups().joined())
+        for (id, _) in preferences.bindings.sorted(by: { $0.key < $1.key }) {
+            guard let hotkey = preferences.hotkey(for: id) else { continue }
+            if conflicted.contains(id) {
+                failures[id] = hotkey
+                continue
+            }
+            guard let handler = handlers[id] else { continue }   // 未装配的功能跳过，不算失败
+            if register(hotkey, handler: handler) == nil {
+                failures[id] = hotkey
+            }
+        }
+        return failures
+    }
 }

@@ -5,7 +5,7 @@ final class PortMonitorModule: NSObject, AppModule {
     let id = "portMonitor"
     let title = "端口占用"
     /// 不注册全局热键：功能键已全部占用（F2 归中转站），经菜单「端口占用…」触发。
-    let defaultHotkey: Hotkey? = nil
+    let defaultHotkey: Hotkey? = Hotkey(keyCode: 35, modifiers: ModifierKey.option)  // ⌥P（kVK_ANSI_P）
 
     private let queryService = PortQueryService()
     private let killService = PortKillService()

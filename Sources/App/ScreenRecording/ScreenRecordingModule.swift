@@ -9,7 +9,7 @@ final class ScreenRecordingModule: NSObject, AppModule {
 
     let id = "screen-recording"
     let title = "录屏"
-    let defaultHotkey: Hotkey? = .f4
+    let defaultHotkey: Hotkey? = Hotkey(keyCode: 15, modifiers: ModifierKey.option)  // ⌥R（kVK_ANSI_R）
 
     // MARK: - 依赖
 

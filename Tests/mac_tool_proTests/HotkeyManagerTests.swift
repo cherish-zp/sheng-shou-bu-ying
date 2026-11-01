@@ -62,3 +62,61 @@ final class FailingRegistrar: HotkeyRegistrar {
     func register(id: UInt32, keyCode: UInt32, modifiers: UInt32) -> Bool { false }
     func unregister(id: UInt32) {}
 }
+
+// MARK: - applyPreferences（Alt 主键方案应用）
+
+extension HotkeyManagerTests {
+
+    func test_applyPreferences_unregistersOldAndRegistersPlan() {
+        let registrar = FakeHotkeyRegistrar()
+        let manager = HotkeyManager(registrar: registrar)
+        var firedOld = false, firedNew = false
+        manager.register(Hotkey.f1) { firedOld = true }   // 旧 F1 注册
+        let prefs = HotkeyPreferences.withDefaults()
+        let failures = manager.applyPreferences(prefs, handlers: ["screenshot": { firedNew = true }])
+
+        XCTAssertTrue(failures.isEmpty)
+        XCTAssertTrue(firedNew == false)
+        // 旧 F1 已全部注销：fake registrar 里不应再有 F1
+        XCTAssertFalse(registrar.registered.values.contains(Hotkey.f1))
+        // 新方案已注册 ⌥A
+        XCTAssertTrue(registrar.registered.values.contains(
+            Hotkey(keyCode: 0, modifiers: ModifierKey.option)))
+        _ = firedOld
+    }
+
+    func test_applyPreferences_conflictingBindingsAreSkippedAndReported() {
+        let registrar = FakeHotkeyRegistrar()
+        let manager = HotkeyManager(registrar: registrar)
+        var prefs = HotkeyPreferences.withDefaults()
+        prefs.bindings["screenshot"] = HotkeyBinding(keyCode: 7)   // 与剪贴板冲突
+        var fired = false
+        let failures = manager.applyPreferences(prefs, handlers: [
+            "screenshot": { fired = true },
+            "clipboardHistory": {},
+        ])
+        // 冲突双方都不注册，且都在失败表里
+        XCTAssertEqual(Set(failures.keys), ["screenshot", "clipboardHistory"])
+        XCTAssertFalse(registrar.registered.values.contains(
+            Hotkey(keyCode: 7, modifiers: ModifierKey.option)))
+        _ = fired
+    }
+
+    func test_applyPreferences_reportsSystemRegistrationFailure() {
+        let manager = HotkeyManager(registrar: FailingRegistrar())
+        let prefs = HotkeyPreferences.withDefaults()
+        let failures = manager.applyPreferences(prefs, handlers: ["screenshot": {}])
+        XCTAssertEqual(failures["screenshot"], Hotkey(keyCode: 0, modifiers: ModifierKey.option),
+                       "系统注册失败要进失败表（UI 提示用）")
+    }
+
+    func test_applyPreferences_bindingWithoutHandlerIsSkipped() {
+        let registrar = FakeHotkeyRegistrar()
+        let manager = HotkeyManager(registrar: registrar)
+        let prefs = HotkeyPreferences.withDefaults()
+        let failures = manager.applyPreferences(prefs, handlers: ["screenshot": {}])
+        XCTAssertTrue(failures.isEmpty)
+        XCTAssertGreaterThan(registrar.registered.count, 0)
+        XCTAssertLessThanOrEqual(registrar.registered.count, 1, "无 handler 的绑定不注册")
+    }
+}

@@ -21,7 +21,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var launcherPanelController: LauncherPanelController?
     private let gifRecorder = GIFRecorder()
     private let remoteControlServer = RemoteControlServer.shared
-    private var globalKeyMonitor: Any?
     private var eventTapListener: CGEventTapHotkeyListener?
     private var permissionTimer: Timer?
     private var settingsWindow: SettingsWindow?
@@ -140,6 +139,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         moduleRegistry.register(portMonitorModule)
 
         clipboardHistoryModule.start()
+
+        applyHotkeyPreferences()
 
         // 手机遥控：动作映射到现有能力；应用启动即开启本地网络服务
         remoteControlServer.onAction = { [weak self] action in
@@ -267,26 +268,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app"))
     }
 
-    /// 热键监听：三层兜底确保 F1 能触发截图。
-    /// 1. CGEventTap（主）：可消费事件、阻止系统功能键拦截，需辅助功能权限
-    /// 2. NSEvent 全局监控（备）：Carbon 不触发时兜底
-    /// 3. Carbon RegisterEventHotKey（已在 AppModuleRegistry 注册）
+    /// Alt 主键快捷键方案：读偏好 → 全量重放注册（先注销全部再按方案注册）。
+    /// 启动与设置页改动后共用；冲突/系统级注册失败返回失败表并写诊断日志。
+    @discardableResult
+    func applyHotkeyPreferences() -> [String: Hotkey] {
+        let prefs = HotkeyPreferences.load()
+        let failures = hotkeyManager.applyPreferences(prefs, handlers: hotkeyHandlers())
+        for (id, hotkey) in failures {
+            DiagLog.write("Hotkey register failed: \(id) keyCode=\(hotkey.keyCode) mods=\(hotkey.modifiers)")
+        }
+        return failures
+    }
+
+    /// 13 个功能的热键动作表（Alt 主键体系）。handler 内按模块启用状态过滤：
+    /// 设置里关掉的功能，热键按下不触发。
+    private func hotkeyHandlers() -> [String: () -> Void] {
+        func guarded(_ id: String, _ action: @escaping () -> Void) -> () -> Void {
+            return { [weak self] in
+                guard let self = self, self.moduleRegistry.isEnabled(id) else { return }
+                action()
+            }
+        }
+        return [
+            "screenshot": guarded("screenshot") { [weak self] in self?.triggerScreenshot() },
+            "transfer-shelf": guarded("transfer-shelf") { [weak self] in self?.transferShelfModule.perform() },
+            "screen-recording": guarded("screen-recording") { [weak self] in self?.moduleRegistry.module(for: "screen-recording")?.perform() },
+            "color-picker": guarded("color-picker") { [weak self] in self?.moduleRegistry.module(for: "color-picker")?.perform() },
+            "portMonitor": guarded("portMonitor") { [weak self] in self?.portMonitorModule.perform() },
+            "clipboardHistory": guarded("clipboardHistory") { [weak self] in self?.clipboardHistoryModule.showWindow() },
+            "scratchpad": guarded("scratchpad") { [weak self] in self?.showScratchPad() },
+            "dictation": guarded("dictation") { [weak self] in self?.showDictation() },
+            "translate": guarded("translate") { [weak self] in self?.showTranslatePanel() },
+            "gifRecorder": guarded("gifRecorder") { [weak self] in self?.toggleGIF() },
+            "launcher": guarded("launcher") { [weak self] in self?.showLauncher() },
+            "calendar": guarded("calendar") { [weak self] in self?.showCalendar() },
+            "textToolkit": guarded("textToolkit") { [weak self] in self?.showTextToolkit() },
+        ]
+    }
+
+    /// 截图会话内热键监听：CGEventTap 消费 F3（贴图选区）。
+    /// F1 已退役（Alt 主键体系：截图 = ⌥A，走 Carbon 注册），其三层兜底随之移除。
     private func setupGlobalKeyMonitor() {
-        // 检查并请求辅助功能权限（CGEventTap 和全局键盘监控需要）
+        // 检查并请求辅助功能权限（CGEventTap 需要辅助功能权限）
         let trusted = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
         DiagLog.write("Accessibility trusted: \(trusted)")
 
         tryStartEventTap()
-
-        // NSEvent 全局监控备选方案
-        globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if ScreenshotHotkeyAction.action(for: UInt32(event.keyCode)) == .screenshot,
-               self?.moduleRegistry.isEnabled("screenshot") == true {
-                DiagLog.write("NSEvent global monitor: F1 detected")
-                self?.triggerScreenshot()
-            }
-        }
-        DiagLog.write("Hotkey listeners installed (CGEventTap + NSEvent monitor) for F1+F3")
 
         // 如果权限未授予，启动定时器等待用户授权后自动重建 CGEventTap
         if !trusted {
@@ -298,7 +325,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @discardableResult
     private func tryStartEventTap() -> Bool {
         let tapListener = CGEventTapHotkeyListener()
-        tapListener.start(keyCodes: [122, 99]) { [weak self] keyCode in
+        tapListener.start(keyCodes: [99]) { [weak self] keyCode in
             guard let self = self else { return false }
             switch ScreenshotHotkeyAction.action(for: UInt32(keyCode)) {
             case .screenshot:
