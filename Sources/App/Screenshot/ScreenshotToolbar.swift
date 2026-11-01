@@ -234,6 +234,10 @@ final class ScreenshotToolbar: NSWindow {
 
         // 对勾按钮：复制到剪贴板（最常用，放最后方便点击）
         x = addIconButton(container, x: x + 6, y: y, symbol: "checkmark", tooltip: "复制", action: #selector(copyTapped), bgColor: .systemBlue)
+
+        // 窗口宽度按实际槽位计算（此前固定 690pt，槽位扩容后尾部按钮被裁出屏）
+        let contentWidth = x + btnSize + ToolbarLayoutCalculator.padding
+        setContentSize(NSSize(width: contentWidth, height: 48))
     }
 
     private func addToolButton(_ container: NSView, x: CGFloat, y: CGFloat, size: CGFloat,
