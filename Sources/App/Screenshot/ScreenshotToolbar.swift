@@ -498,20 +498,9 @@ final class ScreenshotToolbar: NSWindow {
 
         var dx: CGFloat = 8
         for seconds in [3, 5, 10] {
-            let btn = NSButton(frame: NSRect(x: dx, y: 8, width: btnWidth, height: 28))
-            btn.wantsLayer = true
-            btn.layer?.cornerRadius = 6
-            btn.layer?.backgroundColor = UITheme.toolbarControl.cgColor
-            btn.isBordered = false
-            btn.attributedTitle = NSAttributedString(string: "\(seconds)s", attributes: [
-                .font: NSFont.systemFont(ofSize: 12, weight: .medium),
-                .foregroundColor: UITheme.chromeText
-            ])
-            btn.title = ""
-            btn.tag = seconds
-            btn.toolTip = "\(seconds) 秒后截取当前画面"
-            btn.target = self
-            btn.action = #selector(delaySelected(_:))
+            let btn = ToolbarButtonFactory.delayButton(
+                seconds: seconds, target: self, action: #selector(delaySelected(_:)))
+            btn.frame = NSRect(x: dx, y: 8, width: btnWidth, height: 28)
             card.addSubview(btn)
             dx += btnWidth + spacing
         }
