@@ -4,12 +4,12 @@ import QuartzCore
 /// 流光主题（对标浮引流光外观）：动态流动的彩色渐变玻璃。
 /// 结构：FlowingGlassView = 动画渐变层（底层）+ NSVisualEffectView（withinWindow 玻璃折射，顶层）。
 public enum FlowLightPalette {
-    /// 流光四色（浮引紫/粉/蓝/淡紫系）。
+    /// 流光四色（浮引紫/粉/蓝/淡紫系，高饱和——保证流动可感知）。
     public static let colors: [NSColor] = [
-        NSColor(srgbRed: 0.79, green: 0.65, blue: 0.96, alpha: 1),   // 紫
-        NSColor(srgbRed: 0.96, green: 0.72, blue: 0.82, alpha: 1),   // 粉
-        NSColor(srgbRed: 0.66, green: 0.78, blue: 0.96, alpha: 1),   // 蓝
-        NSColor(srgbRed: 0.88, green: 0.82, blue: 0.96, alpha: 1),   // 淡紫
+        NSColor(srgbRed: 0.62, green: 0.42, blue: 0.95, alpha: 1),   // 紫
+        NSColor(srgbRed: 0.96, green: 0.55, blue: 0.72, alpha: 1),   // 粉
+        NSColor(srgbRed: 0.42, green: 0.62, blue: 0.96, alpha: 1),   // 蓝
+        NSColor(srgbRed: 0.80, green: 0.62, blue: 0.95, alpha: 1),   // 淡紫
     ]
 }
 
@@ -23,19 +23,15 @@ public enum FlowLightMotion {
     }
 }
 
-/// 流光玻璃视图（NSVisualEffectView 子类）：材质之下是窗口桌面模糊，
-/// 渐变以 sublayer 叠在材质之上、内容之下——紫色流光透出且内容清晰。
-/// 动画健壮性：脱离窗口层级会丢动画，viewDidMoveToWindow 时重挂。
-public final class FlowingGlassView: NSVisualEffectView {
+/// 流光视图（纯 NSView + CAGradientLayer 动画）：高饱和渐变缓慢流动。
+/// 不用 NSVisualEffectView——特效视图会干扰 sublayer 动画（实测流光静止）；
+/// 不透明渐变直接可见，可读性由上层白色半透明卡片保证。
+public final class FlowingGlassView: NSView {
 
     let gradientLayer = CAGradientLayer()
 
     public init(reduceMotion: Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) {
         super.init(frame: .zero)
-        material = .underPageBackground
-        blendingMode = .behindWindow   // 材质模糊桌面；渐变 sublayer 叠在材质之上
-        state = .active
-
         wantsLayer = true
         gradientLayer.type = .axial
         gradientLayer.colors = FlowLightPalette.colors.map { $0.cgColor }
@@ -52,7 +48,8 @@ public final class FlowingGlassView: NSVisualEffectView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    /// 流光动画：颜色与渐变位置缓慢往返（对比度拉开，流动可感知）。
+    /// 流光动画：颜色循环 + 位置偏移，12s 往返。脱离窗口层级会丢动画，
+    /// viewDidMoveToWindow 时重挂。
     func startFlowAnimation() {
         let colors = FlowLightPalette.colors.map { $0.cgColor }
         let shifted = Array(colors.dropFirst()) + [colors[0]]

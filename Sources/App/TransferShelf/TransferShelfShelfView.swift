@@ -28,7 +28,6 @@ final class TransferShelfShelfView: NSView {
     private var items: [TransferItem] = []
     /// 当前屏幕可见宽度（控制器在布局前同步；决定一行卡片数与换行）。
     var currentScreenWidth: CGFloat = NSScreen.main?.frame.width ?? 1512
-    private let effectView = NSVisualEffectView()
     private let titleLabel = NSTextField(labelWithString: "中转站")
     private let countLabel = NSTextField(labelWithString: "")
     private let clearButton = NSButton()
@@ -52,18 +51,6 @@ final class TransferShelfShelfView: NSView {
         layer?.borderColor = UITheme.hairline.cgColor
         layer?.borderWidth = TransferShelfLayoutSpec.panelHairlineWidth
 
-        // 流光渐变垫底（withinWindow 玻璃折射它）
-        let flowGradient = FlowingGlassView()
-        flowGradient.frame = bounds
-        flowGradient.autoresizingMask = [.width, .height]
-        addSubview(flowGradient)
-
-        effectView.material = TransferShelfLayoutSpec.panelMaterial
-        // withinWindow：折射本窗口内的流光渐变层（渐变垫在 effectView 之下）
-        effectView.blendingMode = .withinWindow
-        effectView.state = .active
-        effectView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(effectView)
 
         // 头部栏：标题 + 条目计数 + 清空按钮
         titleLabel.font = .systemFont(ofSize: 11, weight: .semibold)
@@ -126,10 +113,6 @@ final class TransferShelfShelfView: NSView {
         addSubview(emptyStack)
 
         NSLayoutConstraint.activate([
-            effectView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            effectView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            effectView.topAnchor.constraint(equalTo: topAnchor),
-            effectView.bottomAnchor.constraint(equalTo: bottomAnchor),
 
             titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: TransferShelfLayoutSpec.panelPadding),
             titleLabel.centerYAnchor.constraint(equalTo: topAnchor, constant: TransferShelfLayoutSpec.headerHeight / 2),

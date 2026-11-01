@@ -35,12 +35,27 @@ final class FlowLightThemeTests: XCTestCase {
     }
 
     func test_flowingGlass_gradientSublayer_present() {
-        // 渐变以 sublayer 叠在材质之上（材质模糊桌面、渐变透出紫色流光）
+        // 纯 NSView + CAGradientLayer（不依赖 NSVisualEffectView——特效视图会干扰动画）
         let glass = FlowingGlassView()
-        XCTAssertEqual(glass.material, .underPageBackground)
+        XCTAssertFalse(glass is NSVisualEffectView, "不得基于特效视图（会干扰动画）")
         XCTAssertNotNil(glass.gradientLayer, "渐变层必须存在（流光载体）")
         XCTAssertTrue(glass.layer?.sublayers?.contains { $0 === glass.gradientLayer } == true,
                       "渐变层必须是视图 layer 的直接 sublayer")
+    }
+
+    func test_palette_saturated_flowPerceptible() {
+        // 饱和度（max-min 分量）> 0.25：颜色间流动才可感知
+        for color in FlowLightPalette.colors {
+            let rgb = color.usingColorSpace(.deviceRGB)!
+            let comps = [rgb.redComponent, rgb.greenComponent, rgb.blueComponent]
+            let saturation = (comps.max() ?? 0) - (comps.min() ?? 0)
+            XCTAssertGreaterThan(saturation, 0.25, "流光色饱和度不足：\(color)")
+        }
+        // 色相分布：四色两两不同（首尾循环亦不同）
+        for (i, c) in FlowLightPalette.colors.enumerated() {
+            let next = FlowLightPalette.colors[(i + 1) % FlowLightPalette.colors.count]
+            XCTAssertNotEqual(c, next)
+        }
     }
 
     func test_applyDark_titleBarReadable() {
