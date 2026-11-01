@@ -24,13 +24,13 @@ final class TranslatePanelController: NSObject {
 
         window.title = "翻译"
         window.isReleasedWhenClosed = false
-        UITheme.applyDark(window)
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.center()
         super.init()
         let content = NSView(frame: NSRect(x: 0, y: 0, width: 560, height: 400))
         content.autoresizingMask = [.width, .height]
         window.contentView = content
+        UITheme.applyDark(window)
         UITheme.stylePanel(content)
 
         for (view, y) in [(sourceScroll(), 10.0), (outputScroll(), 210.0)] {}

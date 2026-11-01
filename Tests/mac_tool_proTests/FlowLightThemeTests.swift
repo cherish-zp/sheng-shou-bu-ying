@@ -34,13 +34,68 @@ final class FlowLightThemeTests: XCTestCase {
         XCTAssertGreaterThan(cardBrightness, 0.6, "卡片应为浅玻璃")
     }
 
-    func test_flowingGlass_gradientSublayer_present() {
-        // 纯 NSView + CAGradientLayer（不依赖 NSVisualEffectView——特效视图会干扰动画）
+    func test_flowingGlass_backingLayerIsGradient() {
+        // backing layer 直接就是渐变层：时序无关、必然渲染
         let glass = FlowingGlassView()
         XCTAssertFalse(glass is NSVisualEffectView, "不得基于特效视图（会干扰动画）")
-        XCTAssertNotNil(glass.gradientLayer, "渐变层必须存在（流光载体）")
-        XCTAssertTrue(glass.layer?.sublayers?.contains { $0 === glass.gradientLayer } == true,
-                      "渐变层必须是视图 layer 的直接 sublayer")
+        XCTAssertTrue(glass.layer === glass.gradientLayer, "backing layer 必须就是 CAGradientLayer")
+        XCTAssertEqual(glass.gradientLayer.type, .axial)
+    }
+
+    /// 复刻 app 精确结构：NSWindow + contentView + applyDark + scroll，逐层找白屏元凶。
+    func test_appStructure_rendersGradient() throws {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 200),
+                              styleMask: [.titled, .closable, .resizable],
+                              backing: .buffered, defer: false)
+        window.backgroundColor = .clear
+        window.titlebarAppearsTransparent = true
+        window.appearance = NSAppearance(named: .aqua)
+
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
+        window.contentView = content
+        UITheme.applyDark(window)   // 玻璃注入 content
+
+        let scroll = NSScrollView(frame: content.bounds)
+        scroll.drawsBackground = false
+        let table = NSTableView()
+        table.backgroundColor = .clear
+        scroll.documentView = table
+        content.addSubview(scroll)
+        content.layoutSubtreeIfNeeded()
+
+        let bmp = try XCTUnwrap(content.bitmapImageRepForCachingDisplay(in: content.bounds))
+        content.cacheDisplay(in: content.bounds, to: bmp)
+
+        var saturated = 0
+        for (x, y) in [(50, 50), (150, 50), (50, 150), (150, 150)] {
+            guard let c = bmp.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+            let comps = [c.redComponent, c.greenComponent, c.blueComponent]
+            if (comps.max() ?? 0) - (comps.min() ?? 0) > 0.1 { saturated += 1 }
+        }
+        XCTAssertGreaterThanOrEqual(saturated, 2, "app 同构必须渲染渐变（\(saturated)/4 饱和）")
+    }
+
+    func test_flowingGlass_rendersSaturatedPixels() throws {
+        // 决定性渲染测试：玻璃视图必须真的画出高饱和渐变（此前静默白屏的回归网）
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 120, height: 120))
+        let glass = FlowingGlassView()
+        glass.frame = container.bounds
+        container.addSubview(glass)
+        container.layoutSubtreeIfNeeded()
+
+        let bmp = try XCTUnwrap(container.bitmapImageRepForCachingDisplay(in: container.bounds))
+        container.cacheDisplay(in: container.bounds, to: bmp)
+
+        // 采样四角+中心：必须存在高饱和像素（纯白/纯灰 = 渲染失败）
+        var saturated = 0
+        var samples = 0
+        for (x, y) in [(10, 10), (110, 10), (10, 110), (110, 110), (60, 60)] {
+            guard let c = bmp.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+            samples += 1
+            let comps = [c.redComponent, c.greenComponent, c.blueComponent]
+            if (comps.max() ?? 0) - (comps.min() ?? 0) > 0.1 { saturated += 1 }
+        }
+        XCTAssertGreaterThanOrEqual(saturated, 3, "流光玻璃必须渲染出高饱和渐变像素（\(saturated)/\(samples)）")
     }
 
     func test_palette_saturated_flowPerceptible() {

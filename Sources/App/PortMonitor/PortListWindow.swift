@@ -41,7 +41,6 @@ final class PortListWindowController: NSObject, NSWindowDelegate, NSTableViewDat
 
         window.title = "端口占用"
         window.isReleasedWhenClosed = false
-        UITheme.applyDark(window)
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.center()
 

@@ -66,6 +66,16 @@ public enum UITheme {
 
     // MARK: - 便捷样式
 
+    /// 统一流光注入点（幂等）：把 FlowingGlassView 垫到宿主视图最底层，
+    /// 全部面板/窗口/子面板共用——增删流光只改这一处。
+    public static func installFlowingGlass(in view: NSView) {
+        guard !view.subviews.contains(where: { $0 is FlowingGlassView }) else { return }
+        let glass = FlowingGlassView()
+        glass.frame = view.bounds
+        glass.autoresizingMask = [.width, .height]
+        view.addSubview(glass, positioned: .below, relativeTo: nil)
+    }
+
     /// 把窗口居中到目标屏（默认鼠标所在屏——用户视线所在处）。
     public static func center(_ window: NSWindow, on screen: NSScreen? = nil) {
         let target = screen
@@ -85,14 +95,8 @@ public enum UITheme {
         window.backgroundColor = panelBackground
         window.titlebarAppearsTransparent = true
         window.appearance = NSAppearance(named: .aqua)
-        DispatchQueue.main.async {
-            guard let content = window.contentView else { return }
-            // 已注入过则跳过（幂等）
-            if content.subviews.contains(where: { $0 is FlowingGlassView }) { return }
-            let glass = FlowingGlassView()
-            glass.frame = content.bounds
-            glass.autoresizingMask = [.width, .height]
-            content.addSubview(glass, positioned: .below, relativeTo: nil)
+        if let content = window.contentView {
+            installFlowingGlass(in: content)
         }
     }
 

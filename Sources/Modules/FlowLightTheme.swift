@@ -23,21 +23,21 @@ public enum FlowLightMotion {
     }
 }
 
-/// 流光视图（纯 NSView + CAGradientLayer 动画）：高饱和渐变缓慢流动。
-/// 不用 NSVisualEffectView——特效视图会干扰 sublayer 动画（实测流光静止）；
-/// 不透明渐变直接可见，可读性由上层白色半透明卡片保证。
+/// 流光视图：backing layer 直接就是动画 CAGradientLayer——
+/// 无 NSVisualEffectView 依赖、无 sublayer 时序问题，必然渲染。
+/// 不透明高饱和渐变直接可见，可读性由上层白色半透明卡片保证。
 public final class FlowingGlassView: NSView {
 
-    let gradientLayer = CAGradientLayer()
+    public let gradientLayer = CAGradientLayer()
 
     public init(reduceMotion: Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) {
-        super.init(frame: .zero)
-        wantsLayer = true
         gradientLayer.type = .axial
         gradientLayer.colors = FlowLightPalette.colors.map { $0.cgColor }
         gradientLayer.startPoint = CGPoint(x: 0, y: 0)
         gradientLayer.endPoint = CGPoint(x: 1, y: 1)
-        layer?.addSublayer(gradientLayer)
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer = gradientLayer   // backing layer 即渐变层：随视图尺寸自动缩放
 
         if FlowLightMotion.shouldAnimate(reduceMotion: reduceMotion) {
             startFlowAnimation()
@@ -79,13 +79,5 @@ public final class FlowingGlassView: NSView {
         if gradientLayer.animation(forKey: "flowColors") == nil {
             startFlowAnimation()
         }
-    }
-
-    public override func layout() {
-        super.layout()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        gradientLayer.frame = bounds
-        CATransaction.commit()
     }
 }

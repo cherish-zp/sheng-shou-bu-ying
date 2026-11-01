@@ -86,7 +86,6 @@ final class ClipboardHistoryModule: NSObject, NSTableViewDataSource, NSTableView
                               backing: .buffered, defer: false)
         window.title = "剪贴板历史"
         window.isReleasedWhenClosed = false
-        UITheme.applyDark(window)
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.center()
         self.window = window
@@ -94,6 +93,7 @@ final class ClipboardHistoryModule: NSObject, NSTableViewDataSource, NSTableView
         let content = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 460))
         content.autoresizingMask = [.width, .height]
         window.contentView = content
+        UITheme.applyDark(window)
         UITheme.stylePanel(content)
 
         let table = NSTableView()

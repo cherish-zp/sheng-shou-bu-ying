@@ -48,6 +48,7 @@ final class TransferShelfShelfView: NSView {
         layer?.cornerRadius = TransferShelfLayoutSpec.cornerRadius
         layer?.masksToBounds = true
         layer?.backgroundColor = NSColor.clear.cgColor
+        UITheme.installFlowingGlass(in: self)
         layer?.borderColor = UITheme.hairline.cgColor
         layer?.borderWidth = TransferShelfLayoutSpec.panelHairlineWidth
 

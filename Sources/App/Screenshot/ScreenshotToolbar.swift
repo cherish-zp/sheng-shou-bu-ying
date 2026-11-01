@@ -74,11 +74,8 @@ final class ScreenshotToolbar: NSWindow {
         container.layer?.backgroundColor = NSColor.clear.cgColor
         container.layer?.borderWidth = 1
         container.layer?.borderColor = UITheme.hairline.cgColor
-        // 流光玻璃垫底（所有按钮在其上层）
-        let flowingGlass = FlowingGlassView()
-        flowingGlass.frame = container.bounds
-        flowingGlass.autoresizingMask = [.width, .height]
-        container.addSubview(flowingGlass, positioned: .below, relativeTo: nil)
+        // 流光玻璃垫底（统一注入点）
+        UITheme.installFlowingGlass(in: container)
         contentView = container
 
         var x: CGFloat = 8
@@ -496,10 +493,11 @@ final class ScreenshotToolbar: NSWindow {
         card.wantsLayer = true
         card.layer?.cornerRadius = 12
         card.layer?.masksToBounds = true
-        card.layer?.backgroundColor = UITheme.toolbarBackground.cgColor
+        card.layer?.backgroundColor = NSColor.clear.cgColor
         card.layer?.borderWidth = 1
         card.layer?.borderColor = UITheme.hairline.cgColor
         panel.contentView?.addSubview(card)
+        UITheme.installFlowingGlass(in: card)
 
         var dx: CGFloat = 8
         for seconds in [3, 5, 10] {
@@ -752,10 +750,11 @@ final class ScreenshotToolbar: NSWindow {
         card.wantsLayer = true
         card.layer?.cornerRadius = 12
         card.layer?.masksToBounds = true
-        card.layer?.backgroundColor = UITheme.toolbarBackground.cgColor
+        card.layer?.backgroundColor = NSColor.clear.cgColor
         card.layer?.borderWidth = 1
         card.layer?.borderColor = UITheme.hairline.cgColor
         panel.contentView?.addSubview(card)
+        UITheme.installFlowingGlass(in: card)
 
         // 圆角循环按钮（从主条移入画布面板）
         let cornerBtn = NSButton(frame: NSRect(x: 8, y: 8, width: 56, height: 28))

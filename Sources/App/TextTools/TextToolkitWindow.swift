@@ -71,13 +71,13 @@ final class TextToolkitWindowController: NSObject {
 
         window.title = "文本工具集"
         window.isReleasedWhenClosed = false
-        UITheme.applyDark(window)
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
         let content = NSView(frame: NSRect(x: 0, y: 0, width: 720, height: 480))
         content.autoresizingMask = [.width, .height]
         window.contentView = content
         UITheme.stylePanel(content)
+        UITheme.applyDark(window)
 
         // 装配顺序：全部 addSubview 后再激活约束（跨层级激活约束会 NSException 崩溃）
         let stack = NSStackView()

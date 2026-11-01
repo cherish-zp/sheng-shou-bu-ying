@@ -31,7 +31,6 @@ final class ScratchPadModule: NSObject, NSTextViewDelegate {
                               backing: .buffered, defer: false)
         window.title = "速记（自动保存 · 置顶）"
         window.isReleasedWhenClosed = false
-        UITheme.applyDark(window)
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.level = .floating   // 置顶参考
         window.center()
@@ -40,6 +39,7 @@ final class ScratchPadModule: NSObject, NSTextViewDelegate {
         let content = NSView(frame: window.contentView!.frame)
         content.autoresizingMask = [.width, .height]
         window.contentView = content
+        UITheme.applyDark(window)
         UITheme.stylePanel(content)
 
         let scroll = NSScrollView()
