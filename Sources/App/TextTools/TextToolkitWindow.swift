@@ -22,6 +22,13 @@ final class TextToolkitWindowController: NSObject {
         case removeBlankLines = "去空行"
         case removeDuplicateLines = "去重行"
         case sortLines = "排序"
+        case camel = "小驼峰"
+        case pascal = "大驼峰"
+        case snake = "下划线"
+        case kebab = "短横线"
+        case unescapeJSON = "JSON 反转义"
+        case tsToDateTime = "时间戳→时间"
+        case dateTimeToTs = "时间→时间戳"
     }
 
     override init() {
@@ -150,6 +157,17 @@ final class TextToolkitWindowController: NSObject {
         case .removeBlankLines: result = TextToolkit.removeBlankLines(input)
         case .removeDuplicateLines: result = TextToolkit.removeDuplicateLines(input)
         case .sortLines: result = TextToolkit.sortLines(input)
+        case .camel: result = TextToolkitAdvanced.convertNaming(input, to: .camel)
+        case .pascal: result = TextToolkitAdvanced.convertNaming(input, to: .pascal)
+        case .snake: result = TextToolkitAdvanced.convertNaming(input, to: .snake)
+        case .kebab: result = TextToolkitAdvanced.convertNaming(input, to: .kebab)
+        case .unescapeJSON: result = TextToolkitAdvanced.unescapeJSON(input)
+        case .tsToDateTime:
+            let (output, skipped) = TextToolkitAdvanced.convertTimestamps(input, direction: .toDateTime)
+            result = output + (skipped > 0 ? "（\(skipped) 行未识别）" : "")
+        case .dateTimeToTs:
+            let (output, skipped) = TextToolkitAdvanced.convertTimestamps(input, direction: .toMillis)
+            result = output + (skipped > 0 ? "（\(skipped) 行未识别）" : "")
         }
         outputStorage = NSAttributedString(string: result + "\n", attributes: [
             .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),

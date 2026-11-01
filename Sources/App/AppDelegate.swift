@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let qrReaderService = QRReaderService()
     private let clipboardHistoryModule = ClipboardHistoryModule()
     private let scratchPadModule = ScratchPadModule()
+    private var calendarWindowController: CalendarWindowController?
     private var translatePanelController: TranslatePanelController?
     private var dictationWindowController: DictationWindowController?
     private var launcherPanelController: LauncherPanelController?
@@ -217,6 +218,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         gifRecorder.isRunning ? gifRecorder.stop() : gifRecorder.start()
     }
 
+    /// 轻量日历窗口。
+    @objc private func showCalendar() {
+        let controller = calendarWindowController ?? CalendarWindowController()
+        calendarWindowController = controller
+        controller.showPanel()
+    }
+
+    /// 批量改图：选择图片 → 格式/尺寸选项 → 转换输出到所选文件夹。
+    @objc private func showImageConvert() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.png, .jpeg, .heic]
+        panel.message = "选择要转换的图片"
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+
+        let formatAlert = NSAlert()
+        formatAlert.messageText = "输出格式"
+        formatAlert.addButton(withTitle: "PNG")
+        formatAlert.addButton(withTitle: "JPG")
+        let format: ImageBatchConverter.OutputFormat = formatAlert.runModal() == .alertFirstButtonReturn ? .png : .jpeg
+
+        let dirPanel = NSOpenPanel()
+        dirPanel.canChooseDirectories = true
+        dirPanel.canChooseFiles = false
+        dirPanel.canCreateDirectories = true
+        dirPanel.message = "选择输出文件夹"
+        guard dirPanel.runModal() == .OK, let outputDir = dirPanel.url else { return }
+
+        let (outputs, failures) = ImageBatchConverter.convertFiles(
+            at: panel.urls, options: .init(format: format, maxEdge: 0), outputDirectory: outputDir)
+        TransientHudToast.show(text: "改图完成：成功 \(outputs.count) 张" + (failures.isEmpty ? "" : "，失败 \(failures.count) 张"))
+    }
+
     /// 锁屏：熄屏并要求输入密码（跟随系统安全设置）。
     @objc private func lockScreen() {
         let process = Process()
@@ -360,9 +396,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toolsHeader.isEnabled = false
         for (title, action) in [("剪贴板历史", #selector(showClipboardHistory)),
                                 ("速记", #selector(showScratchPad)),
+                                ("日历", #selector(showCalendar)),
                                 ("翻译…", #selector(showTranslatePanel)),
                                 ("语音听写…", #selector(showDictation)),
                                 ("启动器…", #selector(showLauncher)),
+                                ("批量改图…", #selector(showImageConvert)),
                                 ("文本工具…", #selector(showTextToolkit)),
                                 ("识别二维码", #selector(recognizeQRCode)),
                                 ("录 GIF（主屏）", #selector(toggleGIF)),
