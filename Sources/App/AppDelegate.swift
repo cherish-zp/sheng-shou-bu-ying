@@ -113,6 +113,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         moduleRegistry = AppModuleRegistry(hotkeyManager: hotkeyManager)
 
         screenshotModule = ScreenshotModule()
+        screenshotModule.onTranslateText = { [weak self] text in
+            let controller = self?.translatePanelController ?? {
+                let c = TranslatePanelController()
+                self?.translatePanelController = c
+                return c
+            }()
+            controller.setSource(text)
+            controller.showPanel()
+        }
+        screenshotModule.onRecordSwitch = { [weak self] in
+            self?.moduleRegistry.module(for: "screen-recording")?.perform()
+        }
         moduleRegistry.register(screenshotModule)
 
         transferShelfModule = TransferShelfModule()

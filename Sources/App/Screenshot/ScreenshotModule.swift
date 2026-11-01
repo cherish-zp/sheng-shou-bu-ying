@@ -13,6 +13,11 @@ final class ScreenshotModule: AppModule {
     private let pinStore = PinStore<PinWindow>()
     private var coordinator: ScreenshotCoordinator?
 
+    /// 取词翻译联动（AppDelegate 注入：打开翻译面板并带入文字）。
+    var onTranslateText: ((String) -> Void)?
+    /// 录屏切换联动（AppDelegate 注入）。
+    var onRecordSwitch: (() -> Void)?
+
     func perform() {
         // 防止重复触发：会话活跃时直接忽略
         guard session.start() else {
@@ -27,6 +32,12 @@ final class ScreenshotModule: AppModule {
         let coord = ScreenshotCoordinator(pinStore: pinStore)
         coord.onFinished = { [weak self] in
             self?.session.finish()
+        }
+        coord.onTranslateText = { [weak self] text in
+            self?.onTranslateText?(text)
+        }
+        coord.onRecordSwitch = { [weak self] in
+            self?.onRecordSwitch?()
         }
         self.coordinator = coord
         coord.start()

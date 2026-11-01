@@ -83,6 +83,11 @@ final class TranslatePanelController: NSObject {
     private func sourceScroll() -> NSScrollView { wrap(sourceView) }
     private func outputScroll() -> NSScrollView { wrap(outputView) }
 
+    /// 预填源文本（截图取词联动）。
+    func setSource(_ text: String) {
+        sourceView.string = text
+    }
+
     func showPanel() {
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)

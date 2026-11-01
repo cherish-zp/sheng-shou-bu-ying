@@ -1,7 +1,8 @@
 import CoreGraphics
 import Foundation
 
-/// 标注类型：矩形、箭头、文字、马赛克、画笔、序号。
+/// 标注类型：矩形、箭头、文字、马赛克、画笔、序号、气泡、椭圆、直线。
+/// 气泡/椭圆/直线/文本框为对标浮引工具条新增（1:1）。
 public enum AnnotationType: String, Codable, CaseIterable {
     case rectangle
     case arrow
@@ -9,6 +10,9 @@ public enum AnnotationType: String, Codable, CaseIterable {
     case mosaic
     case pen
     case counter
+    case bubble
+    case oval
+    case line
 }
 
 /// 标注颜色：预设调色板 + 自定义 RGB 颜色。
@@ -65,11 +69,14 @@ public struct Annotation: Codable, Equatable, Identifiable {
     }
 }
 
-/// 标注集合：管理添加/删除/撤销/清空，支持 Codable 序列化。
+/// 标注集合：管理添加/删除/撤销/重做/清空，支持 Codable 序列化。
+/// 重做栈：undo 压栈、redo 弹回；新增标注使重做栈失效（与系统惯例一致）。
 public final class AnnotationModel: Codable {
     public private(set) var annotations: [Annotation] = []
     /// 下一个序号标注的序号（从 1 起）。重新选中序号工具时由外部调 resetCounter() 复位。
     public private(set) var counterNext: Int = 1
+    /// 被撤销的标注栈（重做用）。
+    private var redoStack: [Annotation] = []
 
     public init() {}
 
@@ -78,8 +85,12 @@ public final class AnnotationModel: Codable {
     /// 是否有可撤销的标注（用于启用/禁用撤销按钮）。
     public var canUndo: Bool { !annotations.isEmpty }
 
+    /// 是否有可重做的标注（用于启用/禁用重做按钮）。
+    public var canRedo: Bool { !redoStack.isEmpty }
+
     public func add(_ annotation: Annotation) {
         annotations.append(annotation)
+        redoStack.removeAll()
     }
 
     public func remove(at index: Int) {
@@ -95,11 +106,27 @@ public final class AnnotationModel: Codable {
         if popped?.type == .counter {
             counterNext = max(1, counterNext - 1)
         }
+        if let popped = popped {
+            redoStack.append(popped)
+        }
         return popped
+    }
+
+    /// 重做：把最近撤销的标注放回，返回该标注（重做栈空返回 nil）。
+    /// 重做序号标注时序号推进（与放置时的递增一致）。
+    @discardableResult
+    public func redo() -> Annotation? {
+        guard let annotation = redoStack.popLast() else { return nil }
+        annotations.append(annotation)
+        if annotation.type == .counter {
+            counterNext += 1
+        }
+        return annotation
     }
 
     public func clear() {
         annotations.removeAll()
+        redoStack.removeAll()
     }
 
     // MARK: - 序号标注

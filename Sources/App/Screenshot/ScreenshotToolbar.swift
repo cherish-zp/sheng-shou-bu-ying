@@ -8,6 +8,11 @@ protocol ScreenshotToolbarDelegate: AnyObject {
     func toolbarDidToggleShadow()
     func toolbarDidSetShadowOpacity(_ opacity: CGFloat)
     func toolbarDidUndo()
+    func toolbarDidRedo()
+    func toolbarDidRequestTranslate()
+    func toolbarDidRequestShare(image: NSImage)
+    func selectionImageForSharing() -> NSImage?
+    func toolbarDidRequestRecordSwitch()
     func toolbarDidRequestOCR()
     func toolbarDidRequestOCRAndCopy()
     func toolbarDidRequestDelay(seconds: Int)
@@ -36,6 +41,7 @@ final class ScreenshotToolbar: NSWindow {
     private var paletteButton: NSButton?
     private var colorPanel: NSPanel?
     private var undoButton: NSButton?
+    private var redoButton: NSButton?
     private(set) var selectedColor: AnnotationColor = .red
 
     init() {
@@ -74,37 +80,32 @@ final class ScreenshotToolbar: NSWindow {
         let y: CGFloat = 10
         let btnSize: CGFloat = 28
 
-        // 圆角按钮（最左）：直接循环切换 0/8/16/24/32，按钮显示当前半径
-        let cornerBtn = NSButton(frame: NSRect(x: x, y: y, width: 36, height: btnSize))
-        cornerBtn.isBordered = false
-        cornerBtn.wantsLayer = true
-        cornerBtn.layer?.cornerRadius = 6
-        cornerBtn.layer?.backgroundColor = UITheme.toolbarControl.cgColor
-        cornerBtn.attributedTitle = NSAttributedString(string: "圆角", attributes: [
-            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-            .foregroundColor: UITheme.chromeText
-        ])
-        cornerBtn.title = ""
-        cornerBtn.toolTip = "圆角：点击循环切换半径"
-        cornerBtn.target = self
-        cornerBtn.action = #selector(cornerTapped)
-        container.addSubview(cornerBtn)
-        container.registerTooltipButton(cornerBtn, text: "圆角")
-        cornerButton = cornerBtn
-        x += 36 + 4
+        // 拖拽手柄（⠿）：按住拖动整条工具栏（对标浮引）
+        let dragHandle = NSButton(frame: NSRect(x: x, y: y, width: 22, height: btnSize))
+        dragHandle.isBordered = false
+        dragHandle.image = NSImage(systemSymbolName: "menubar.dock.rectangle",
+                                   accessibilityDescription: "拖动工具条")
+        dragHandle.image?.isTemplate = true
+        dragHandle.contentTintColor = UITheme.textSecondary
+        dragHandle.toolTip = "拖动工具条"
+        dragHandle.target = self
+        dragHandle.action = #selector(dragHandlePressed)
+        container.addSubview(dragHandle)
+        x += 22 + 6
 
-        // 选择工具（无标注）
-        x = addToolButton(container, x: x, y: y, size: btnSize, tool: nil, symbol: "cursorarrow")
-
-        // 标注工具
-        x = addToolButton(container, x: x + 4, y: y, size: btnSize, tool: .rectangle, symbol: "square", tooltip: "形状")
-        x = addToolButton(container, x: x + 4, y: y, size: btnSize, tool: .arrow, symbol: "arrow.up.right", tooltip: "箭头")
-        x = addToolButton(container, x: x + 4, y: y, size: btnSize, tool: .text, symbol: "textformat", tooltip: "文案")
-        x = addToolButton(container, x: x + 4, y: y, size: btnSize, tool: .mosaic, symbol: "square.dashed", tooltip: "马赛克")
+        // 标注工具（1:1 浮引顺序：气泡/序号/矩形/箭头/画笔/马赛克/椭圆/直线/文本框）
+        x = addToolButton(container, x: x, y: y, size: btnSize, tool: .bubble, symbol: "text.bubble", tooltip: "气泡标注")
         x = addToolButton(container, x: x + 4, y: y, size: btnSize, tool: .counter,
                           symbol: "number.square", tooltip: "序号标注（点击画布放置，重新选中复位为 1）")
+        x = addToolButton(container, x: x + 4, y: y, size: btnSize, tool: .rectangle, symbol: "square", tooltip: "矩形")
+        x = addToolButton(container, x: x + 4, y: y, size: btnSize, tool: .arrow, symbol: "arrow.up.right", tooltip: "箭头")
+        x = addToolButton(container, x: x + 4, y: y, size: btnSize, tool: .pen, symbol: "pencil.tip", tooltip: "画笔")
+        x = addToolButton(container, x: x + 4, y: y, size: btnSize, tool: .mosaic, symbol: "square.dashed", tooltip: "马赛克")
+        x = addToolButton(container, x: x + 4, y: y, size: btnSize, tool: .oval, symbol: "circle", tooltip: "椭圆")
+        x = addToolButton(container, x: x + 4, y: y, size: btnSize, tool: .line, symbol: "line.diagonal", tooltip: "直线")
+        x = addToolButton(container, x: x + 4, y: y, size: btnSize, tool: .text, symbol: "character.textbox", tooltip: "文字")
 
-        // 画布按钮：点击展开子面板（圆角 + 阴影）
+        // 画布按钮：点击展开子面板（圆角 + 阴影 + 圆角循环）
         let cvBtn = NSButton(frame: NSRect(x: x + 6, y: y, width: btnSize, height: btnSize))
         cvBtn.image = NSImage(systemSymbolName: "square.on.square", accessibilityDescription: "画布")
         cvBtn.image?.isTemplate = true
@@ -128,12 +129,28 @@ final class ScreenshotToolbar: NSWindow {
         ub.isBordered = false
         ub.wantsLayer = true
         ub.layer?.cornerRadius = 6
+        // 可用=亮白 / 禁用=0.25 灰（修复"撤销看不清"），refreshUndoState 统一驱动
         ub.title = ""
         ub.target = self
         ub.action = #selector(undoTapped)
         container.addSubview(ub)
         container.registerTooltipButton(ub, text: "撤销")
         undoButton = ub
+
+        // 重做按钮（对标浮引 ↪）
+        let rb = NSButton(frame: NSRect(x: x + 4 + btnSize + 2, y: y, width: btnSize, height: btnSize))
+        rb.image = NSImage(systemSymbolName: "arrow.uturn.forward", accessibilityDescription: "重做")
+        rb.image?.isTemplate = true
+        rb.contentTintColor = UITheme.chromeText
+        rb.isBordered = false
+        rb.wantsLayer = true
+        rb.layer?.cornerRadius = 6
+        rb.toolTip = "重做"
+        rb.target = self
+        rb.action = #selector(redoTapped)
+        container.addSubview(rb)
+        container.registerTooltipButton(rb, text: "重做")
+        redoButton = rb
         updateUndoButton(canUndo: false)
         x += 4 + btnSize
 
@@ -207,9 +224,12 @@ final class ScreenshotToolbar: NSWindow {
 
         // 操作按钮（长截图图标用上下双向箭头，避免与「下载」的 arrow.down 混淆；
         // 注意 SF Symbol 正确名称为 arrow.up.arrow.down，arrow.up.and.down 在 macOS 上不存在）
-        x = addIconButton(container, x: x, y: y, symbol: "arrow.up.arrow.down", tooltip: "长截图（滚动拼接）", action: #selector(scrollTapped), bgColor: .systemPurple)
-        x = addIconButton(container, x: x + 4, y: y, symbol: "arrow.down", tooltip: "下载", action: #selector(saveTapped), bgColor: .systemGreen)
+        x = addIconButton(container, x: x, y: y, symbol: "character.magnify", tooltip: "取词翻译", action: #selector(translateTapped), bgColor: .systemTeal)
+        x = addIconButton(container, x: x + 4, y: y, symbol: "arrow.up.arrow.down", tooltip: "长截图（滚动拼接）", action: #selector(scrollTapped), bgColor: .systemPurple)
+        x = addIconButton(container, x: x + 4, y: y, symbol: "video", tooltip: "切换到录屏", action: #selector(recordSwitchTapped), bgColor: .systemIndigo)
+        x = addIconButton(container, x: x + 4, y: y, symbol: "arrow.down", tooltip: "保存", action: #selector(saveTapped), bgColor: .systemBlue)
         x = addIconButton(container, x: x + 4, y: y, symbol: "pin", tooltip: "贴图", action: #selector(pinTapped), bgColor: .systemOrange)
+        x = addIconButton(container, x: x + 4, y: y, symbol: "square.and.arrow.up", tooltip: "分享", action: #selector(shareTapped), bgColor: .systemGray)
         x = addIconButton(container, x: x + 4, y: y, symbol: "xmark", tooltip: "关闭", action: #selector(cancelTapped), bgColor: .systemRed)
 
         // 对勾按钮：复制到剪贴板（最常用，放最后方便点击）
@@ -641,12 +661,33 @@ final class ScreenshotToolbar: NSWindow {
     }
     @objc private func undoTapped() { toolbarDelegate?.toolbarDidUndo() }
 
+    @objc private func redoTapped() { toolbarDelegate?.toolbarDidRedo() }
+
+    @objc private func translateTapped() { toolbarDelegate?.toolbarDidRequestTranslate() }
+
+    @objc private func recordSwitchTapped() { toolbarDelegate?.toolbarDidRequestRecordSwitch() }
+
+    @objc private func shareTapped() {
+        guard let image = currentSelectionImage() else { return }
+        toolbarDelegate?.toolbarDidRequestShare(image: image)
+    }
+
+    /// 当前选区成图（供分享）。
+    private func currentSelectionImage() -> NSImage? {
+        toolbarDelegate?.selectionImageForSharing()
+    }
+
+    /// 拖拽手柄（视觉占位）：工具条位置由 CanvasPanelPositioner 决定，
+    /// 真实窗口拖动需 NSEvent 全局监听，暂不启用。
+    @objc private func dragHandlePressed() {}
+
     // MARK: 工具状态
 
     func selectTool(_ tool: AnnotationType?) {
+        // 选中工具 = 高亮圆角框（对标浮引马赛克选中样式）
         for (t, btn) in toolButtons {
             btn.layer?.backgroundColor = (t == tool)
-                ? NSColor.black.withAlphaComponent(0.12).cgColor
+                ? NSColor.white.withAlphaComponent(0.22).cgColor
                 : UITheme.toolbarControl.cgColor
         }
     }
@@ -671,10 +712,12 @@ final class ScreenshotToolbar: NSWindow {
         }
     }
 
-    /// 更新撤销按钮的可用状态（无可撤销标注时置灰）。
-    func updateUndoButton(canUndo: Bool) {
+    /// 更新撤销/重做按钮的可用状态：可用=亮白，禁用=0.25 灰（修复"撤销看不清"）。
+    func updateUndoButton(canUndo: Bool, canRedo: Bool = false) {
         undoButton?.isEnabled = canUndo
-        undoButton?.contentTintColor = canUndo ? .white : NSColor.black.withAlphaComponent(0.12)
+        undoButton?.contentTintColor = canUndo ? .white : NSColor.white.withAlphaComponent(0.25)
+        redoButton?.isEnabled = canRedo
+        redoButton?.contentTintColor = canRedo ? .white : NSColor.white.withAlphaComponent(0.25)
     }
 
     /// 更新圆角按钮的视觉状态（激活时高亮并显示当前半径）。
@@ -692,9 +735,9 @@ final class ScreenshotToolbar: NSWindow {
 
     // MARK: - 画布子面板
 
-    /// 显示画布子面板（阴影开关 + 透明度；圆角已移至工具条最左按钮）。
+    /// 显示画布子面板（圆角循环 + 阴影开关 + 透明度）。
     private func showCanvasPanel() {
-        let panelWidth: CGFloat = 254
+        let panelWidth: CGFloat = 312
         let panelHeight: CGFloat = 44
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight),
                             styleMask: [.borderless, .nonactivatingPanel],
@@ -716,8 +759,25 @@ final class ScreenshotToolbar: NSWindow {
         card.layer?.borderColor = UITheme.hairline.cgColor
         panel.contentView?.addSubview(card)
 
+        // 圆角循环按钮（从主条移入画布面板）
+        let cornerBtn = NSButton(frame: NSRect(x: 8, y: 8, width: 56, height: 28))
+        cornerBtn.wantsLayer = true
+        cornerBtn.layer?.cornerRadius = 6
+        cornerBtn.layer?.backgroundColor = UITheme.toolbarControl.cgColor
+        cornerBtn.isBordered = false
+        cornerBtn.attributedTitle = NSAttributedString(string: "圆角", attributes: [
+            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
+            .foregroundColor: UITheme.chromeText
+        ])
+        cornerBtn.title = ""
+        cornerBtn.toolTip = "圆角：点击循环切换半径"
+        cornerBtn.target = self
+        cornerBtn.action = #selector(cornerTapped)
+        card.addSubview(cornerBtn)
+        cornerButton = cornerBtn
+
         // 阴影开关按钮
-        let shBtn = NSButton(frame: NSRect(x: 8, y: 8, width: 50, height: 28))
+        let shBtn = NSButton(frame: NSRect(x: 70, y: 8, width: 50, height: 28))
         shBtn.wantsLayer = true
         shBtn.layer?.cornerRadius = 6
         shBtn.layer?.backgroundColor = UITheme.toolbarControl.cgColor
@@ -737,12 +797,12 @@ final class ScreenshotToolbar: NSWindow {
         sLabel.font = .systemFont(ofSize: 11, weight: .medium)
         sLabel.textColor = UITheme.chromeText
         sLabel.alignment = .center
-        sLabel.frame = NSRect(x: 206, y: 14, width: 40, height: 16)
+        sLabel.frame = NSRect(x: 262, y: 14, width: 40, height: 16)
         card.addSubview(sLabel)
         shadowLabel = sLabel
 
         // 阴影透明度滑块
-        let slider = NSSlider(frame: NSRect(x: 66, y: 14, width: 135, height: 16))
+        let slider = NSSlider(frame: NSRect(x: 126, y: 14, width: 132, height: 16))
         slider.minValue = 0
         slider.maxValue = 1
         slider.doubleValue = 0.16

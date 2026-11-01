@@ -30,6 +30,10 @@ final class ScreenshotCoordinator {
     private let feedback = ScreenshotFeedbackPresenter()
     /// 统一保存服务（普通截图与长截图结果窗共用，成败均有提示，见 ScreenshotSaveService）。
     private lazy var saveService = ScreenshotSaveService(feedback: feedback)
+    /// 翻译联动：取词完成后交出文字（由 ScreenshotModule 注入）。
+    var onTranslateText: ((String) -> Void)?
+    /// 录屏切换（由 ScreenshotModule 注入）。
+    var onRecordSwitch: (() -> Void)?
 
     init(pinStore: PinStore<PinWindow> = PinStore()) {
         self.pinStore = pinStore
@@ -826,8 +830,45 @@ extension ScreenshotCoordinator: ScreenshotToolbarDelegate {
         guard let view = activeOverlay?.overlayView else { return }
         view.annotations.undo()
         view.needsDisplay = true
-        toolbar?.updateUndoButton(canUndo: view.annotations.canUndo)
+        toolbar?.updateUndoButton(canUndo: view.annotations.canUndo, canRedo: view.annotations.canRedo)
         DiagLog.write("toolbarDidUndo: remaining=\(view.annotations.count)")
+    }
+
+    func toolbarDidRedo() {
+        guard let view = activeOverlay?.overlayView else { return }
+        let redone = view.annotations.redo()
+        view.needsDisplay = true
+        toolbar?.updateUndoButton(canUndo: view.annotations.canUndo, canRedo: view.annotations.canRedo)
+        DiagLog.write("toolbarDidRedo: redone=\(redone != nil) count=\(view.annotations.count)")
+    }
+
+    /// 取词翻译：对当前选区跑 OCR，文字交给翻译面板。
+    func toolbarDidRequestTranslate() {
+        guard let overlay = activeOverlay, let sel = selectionRect,
+              let cropped = croppedSelectionImage(overlay: overlay, selection: sel) else { return }
+        runOCR(on: cropped) { [weak self] text, _ in
+            self?.onTranslateText?(text)
+        }
+    }
+
+    /// 当前选区成图（分享用）。
+    func selectionImageForSharing() -> NSImage? {
+        guard let overlay = activeOverlay, let sel = selectionRect,
+              let cropped = croppedSelectionImage(overlay: overlay, selection: sel) else { return nil }
+        return NSImage(cgImage: cropped, size: NSSize(width: cropped.width, height: cropped.height))
+    }
+
+    /// 切换到录屏模块。
+    func toolbarDidRequestRecordSwitch() {
+        onRecordSwitch?()
+    }
+
+    /// 分享当前选区成图（系统分享面板，锚定覆盖层）。
+    func toolbarDidRequestShare(image: NSImage) {
+        let picker = NSSharingServicePicker(items: [image])
+        if let overlayView = activeOverlay?.overlayView {
+            picker.show(relativeTo: overlayView.bounds, of: overlayView, preferredEdge: .minY)
+        }
     }
 
     func toolbarDidCopy() { copyToClipboard(); finish() }

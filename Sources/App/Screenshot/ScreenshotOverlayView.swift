@@ -221,7 +221,7 @@ final class ScreenshotOverlayView: NSView {
             ctx.addLine(to: end)
             ctx.strokePath()
             drawArrowHead(from: start, to: end, color: color, in: ctx)
-        case .text:
+        case .text, .bubble:
             guard let text = annotation.text, !annotation.points.isEmpty else { break }
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 16, weight: .medium),
@@ -246,11 +246,61 @@ final class ScreenshotOverlayView: NSView {
         case .counter:
             guard !annotation.points.isEmpty else { break }
             drawCounterBadge(annotation, color: color, in: ctx)
+        case .oval:
+            guard annotation.points.count >= 2 else { break }
+            let rect = SelectionRect.normalize(start: annotation.points[0], end: annotation.points[1])
+            ctx.setStrokeColor(color.cgColor)
+            ctx.setLineWidth(annotation.strokeWidth)
+            ctx.strokeEllipse(in: rect)
+        case .line:
+            guard annotation.points.count >= 2 else { break }
+            ctx.setStrokeColor(color.cgColor)
+            ctx.setLineWidth(annotation.strokeWidth)
+            ctx.setLineCap(.round)
+            ctx.move(to: annotation.points[0])
+            ctx.addLine(to: annotation.points[1])
+            ctx.strokePath()
+        case .bubble:
+            drawBubble(annotation, color: color, in: ctx)
         }
         ctx.restoreGState()
     }
 
-    /// 绘制序号徽章：主题色实心圆 + 白色序号，圆心为点击点。
+    /// 绘制气泡标注：圆角底 + 左下小尾巴 + 深色文字（对标浮引气泡标注）。
+    /// points[0] = 气泡左上角（相对选区原点），text = 内容；宽高按文本自适应。
+    private func drawBubble(_ annotation: Annotation, color: NSColor, in ctx: CGContext) {
+        guard let text = annotation.text, !annotation.points.isEmpty else { return }
+        let origin = annotation.points[0]
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 14, weight: .medium),
+            .foregroundColor: NSColor.black,
+        ]
+        let str = NSAttributedString(string: text, attributes: attrs)
+        let textSize = str.size()
+        let padding: CGFloat = 10
+        let bubbleRect = CGRect(x: origin.x, y: origin.y - 26,
+                                width: textSize.width + padding * 2,
+                                height: textSize.height + padding * 2)
+        // 白底深字 + 彩色描边（气泡底用白色保证可读，颜色由描边表达）
+        ctx.saveGState()
+        ctx.setFillColor(NSColor.white.withAlphaComponent(0.95).cgColor)
+        ctx.setStrokeColor(color.cgColor)
+        ctx.setLineWidth(annotation.strokeWidth)
+        // 圆角气泡（CG 路径，y 轴翻转交给视图坐标系）
+        let bubble = CGPath(roundedRect: bubbleRect, cornerWidth: 10, cornerHeight: 10, transform: nil)
+        ctx.addPath(bubble)
+        ctx.drawPath(using: .fillStroke)
+        // 左下小尾巴
+        ctx.move(to: NSPoint(x: bubbleRect.minX + 18, y: bubbleRect.minY))
+        ctx.addLine(to: NSPoint(x: bubbleRect.minX + 10, y: bubbleRect.minY - 12))
+        ctx.addLine(to: NSPoint(x: bubbleRect.minX + 28, y: bubbleRect.minY))
+        ctx.closePath()
+        ctx.drawPath(using: .fillStroke)
+        ctx.restoreGState()
+        str.draw(at: NSPoint(x: bubbleRect.minX + padding,
+                              y: bubbleRect.midY - textSize.height / 2))
+    }
+
     private func drawCounterBadge(_ annotation: Annotation, color: NSColor, in ctx: CGContext) {
         let number = annotation.text ?? "1"
         let badgeRect = CounterBadge.rect(centeredAt: annotation.points[0])
@@ -568,7 +618,8 @@ final class ScreenshotOverlayView: NSView {
         }
         guard let tool = currentTool, let sel = selectionRect else { return }
         let local = CGPoint(x: point.x - sel.origin.x, y: point.y - sel.origin.y)
-        if tool == .text {
+        if tool == .text || tool == .bubble {
+            textEditType = tool
             startTextEditing(at: point, localPoint: local)
         } else if tool == .counter {
             // 序号标注：单击放置（自动递增），无拖拽语义
@@ -648,6 +699,9 @@ final class ScreenshotOverlayView: NSView {
     // MARK: 文字标注编辑
 
     /// 在点击位置弹出文本输入框，用户输入文字后回车提交。
+    /// 正在输入的文字类型（.text 行内 / .bubble 气泡）。
+    private var textEditType: AnnotationType = .text
+
     private func startTextEditing(at viewPoint: CGPoint, localPoint: CGPoint) {
         // 先提交正在编辑的文字（如有），再开始新的输入
         if activeTextField != nil { commitTextEditing() }
@@ -678,6 +732,9 @@ final class ScreenshotOverlayView: NSView {
         NotificationCenter.default.removeObserver(self, name: NSControl.textDidEndEditingNotification, object: tf)
         let text = tf.stringValue
         if let ann = AnnotationModel.textAnnotation(at: textEditLocalPoint, text: text, color: currentColor) {
+            var typed = ann
+            if textEditType == .bubble { typed = Annotation(id: ann.id, type: .bubble, points: ann.points, text: ann.text, color: ann.color, strokeWidth: ann.strokeWidth) }
+            annotations.add(typed)
             annotations.add(ann)
             onAnnotationsChanged?()
             DiagLog.write("Text annotation committed: \(text)")
