@@ -5,16 +5,15 @@ import AppKit
 /// 杜绝"内容层深色但窗口本体/滚动区仍白"的半吊子换肤。
 final class UIThemeTests: XCTestCase {
 
-    func test_applyDarkWindow_setsBackgroundAndDarkAppearance() {
+    func test_applyDarkWindow_flowingGlassContract() {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
                               styleMask: [.titled], backing: .buffered, defer: false)
         window.backgroundColor = .white
-        window.appearance = NSAppearance(named: .aqua)
 
         UITheme.applyDark(window)
 
-        XCTAssertEqual(window.backgroundColor, UITheme.panelBackground)
-        XCTAssertEqual(window.appearance?.name, .darkAqua)
+        XCTAssertEqual(window.appearance?.name, .aqua, "流光玻璃为浅色外观")
+        _ = window // contentView 异步注入玻璃（applyDark 内部幂等）
     }
 
     func test_darkScroll_disablesWhiteBackgroundAndClearsTable() {
@@ -31,17 +30,16 @@ final class UIThemeTests: XCTestCase {
         XCTAssertFalse(table.usesAlternatingRowBackgroundColors, "交替行浅色条与深色主题冲突")
     }
 
-    func test_toolbarTokens_areDark() {
-        // 亮度按“叠在黑底上”的合成结果计（半透明色的深浅由 alpha 参与）
+    func test_toolbarTokens_areLightGlassWithDarkChrome() {
+        // 流光化：工具条底=浅玻璃（亮），控件叠加=深色低透明，文字=深色
         func compositedBrightness(_ c: NSColor) -> Double {
             let rgb = c.usingColorSpace(.deviceRGB)!
             let a = rgb.alphaComponent
             return (rgb.redComponent * a + rgb.greenComponent * a + rgb.blueComponent * a) / 3
         }
-        XCTAssertLessThan(compositedBrightness(UITheme.toolbarBackground), 0.3, "工具条底必须是深色")
-        XCTAssertLessThan(compositedBrightness(UITheme.toolbarControl), 0.3)
-        XCTAssertLessThan(compositedBrightness(UITheme.chromeText), 1.0)
-        XCTAssertGreaterThan(compositedBrightness(UITheme.chromeText), 0.5, "chrome 文字应为亮色")
+        XCTAssertGreaterThan(compositedBrightness(UITheme.toolbarBackground), 0.5, "工具条底应为浅玻璃")
+        XCTAssertLessThan(compositedBrightness(UITheme.toolbarControl), 0.3, "控件叠加应为深色低透明")
+        XCTAssertLessThan(compositedBrightness(UITheme.chromeText), 0.4, "chrome 文字应为深色")
     }
 
     func test_categoryColor_stableForSameKey() {

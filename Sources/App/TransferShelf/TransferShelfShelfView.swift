@@ -48,14 +48,18 @@ final class TransferShelfShelfView: NSView {
         // 由容器裁剪后两者兼得。
         layer?.cornerRadius = TransferShelfLayoutSpec.cornerRadius
         layer?.masksToBounds = true
-        layer?.backgroundColor = UITheme.panelBackground.cgColor
+        layer?.backgroundColor = NSColor.clear.cgColor
         layer?.borderColor = UITheme.hairline.cgColor
         layer?.borderWidth = TransferShelfLayoutSpec.panelHairlineWidth
 
+        // 流光渐变垫底（withinWindow 玻璃折射它）
+        let flowGradient = FlowingGlassView(frame: bounds)
+        flowGradient.autoresizingMask = [.width, .height]
+        addSubview(flowGradient)
+
         effectView.material = TransferShelfLayoutSpec.panelMaterial
-        effectView.blendingMode = .behindWindow
-        // 材质跟随系统外观（浅色系统渲出浅灰）；固定深色外观锁定浮引风格
-        effectView.appearance = NSAppearance(named: .darkAqua)
+        // withinWindow：折射本窗口内的流光渐变层（渐变垫在 effectView 之下）
+        effectView.blendingMode = .withinWindow
         effectView.state = .active
         effectView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(effectView)

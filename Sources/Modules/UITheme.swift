@@ -6,19 +6,19 @@ public enum UITheme {
 
     // MARK: - 面板基调（深色，不随系统外观切换）
 
-    /// 面板底色（近黑）。
-    public static let panelBackground = NSColor(srgbRed: 0.09, green: 0.09, blue: 0.11, alpha: 1)
-    /// 卡片底色（比面板略亮一档）。
-    public static let cardBackground = NSColor(srgbRed: 0.15, green: 0.15, blue: 0.18, alpha: 1)
+    /// 面板底色（流光玻璃由 FlowingGlassView 承担，此处为兜底浅色）。
+    public static let panelBackground = NSColor(srgbRed: 0.97, green: 0.95, blue: 0.99, alpha: 0.6)
+    /// 卡片底色（白色半透明，玻璃上再叠一层）。
+    public static let cardBackground = NSColor.white.withAlphaComponent(0.45)
     /// 卡片悬停底色。
-    public static let cardHover = NSColor(srgbRed: 0.20, green: 0.20, blue: 0.24, alpha: 1)
-    /// 描边/分隔（低透明白）。
-    public static let hairline = NSColor.white.withAlphaComponent(0.10)
+    public static let cardHover = NSColor.white.withAlphaComponent(0.7)
+    /// 描边/分隔（深色低透明）。
+    public static let hairline = NSColor.black.withAlphaComponent(0.10)
 
     // MARK: - 文字
 
-    public static let textPrimary = NSColor.white.withAlphaComponent(0.92)
-    public static let textSecondary = NSColor.white.withAlphaComponent(0.55)
+    public static let textPrimary = NSColor(srgbRed: 0.12, green: 0.10, blue: 0.16, alpha: 1)
+    public static let textSecondary = NSColor.black.withAlphaComponent(0.5)
 
     // MARK: - 强调与语义色
 
@@ -49,13 +49,13 @@ public enum UITheme {
 
     // MARK: - 截图套件工具条（深色 chrome）
 
-    /// 工具条/浮层底色（近黑高不透明）。
-    public static let toolbarBackground = NSColor(srgbRed: 0.12, green: 0.12, blue: 0.15, alpha: 0.98)
-    /// 工具条上的次级控件底（透明白叠加）。
-    public static let toolbarControl = NSColor.white.withAlphaComponent(0.08)
+    /// 工具条/浮层底色（流光化：玻璃由 FlowingGlassView 承担，此为兜底浅色）。
+    public static let toolbarBackground = NSColor.white.withAlphaComponent(0.55)
+    /// 工具条上的次级控件底（深色低透明叠加）。
+    public static let toolbarControl = NSColor.black.withAlphaComponent(0.06)
     /// 工具条分隔线。
-    public static let toolbarSeparator = NSColor.white.withAlphaComponent(0.12)
-    /// 工具条文字/单色图标色。
+    public static let toolbarSeparator = NSColor.black.withAlphaComponent(0.10)
+    /// 工具条文字/单色图标色（玻璃上为深色）。
     public static let chromeText = textPrimary
 
     // MARK: - 几何
@@ -78,11 +78,19 @@ public enum UITheme {
             y: target.frame.midY - frame.height / 2))
     }
 
-    /// 窗口整体深色化：底色换面板色 + 外观强制 darkAqua。
-    /// 所有功能窗口 show/init 时必须调用，否则窗口本体是系统白色。
+    /// 窗口流光化：透明底 + 浅色外观 + 异步注入流光玻璃背景层。
+    /// 所有功能窗口 show/init 时必须调用；contentView 稍后设置也能生效（异步兜底）。
     public static func applyDark(_ window: NSWindow) {
-        window.backgroundColor = panelBackground
-        window.appearance = NSAppearance(named: .darkAqua)
+        window.backgroundColor = .clear
+        window.appearance = NSAppearance(named: .aqua)
+        DispatchQueue.main.async {
+            guard let content = window.contentView else { return }
+            // 已注入过则跳过（幂等）
+            if content.subviews.contains(where: { $0 is FlowingGlassView }) { return }
+            let glass = FlowingGlassView(frame: content.bounds)
+            glass.autoresizingMask = [.width, .height]
+            content.addSubview(glass, positioned: .below, relativeTo: nil)
+        }
     }
 
     /// 滚动区深色化：关闭白底（NSScrollView 默认白）、清表格底色、去交替行浅色条。
@@ -98,7 +106,7 @@ public enum UITheme {
     /// 给面板视图统一上深色底 + 圆角 + 描边。
     public static func stylePanel(_ view: NSView) {
         view.wantsLayer = true
-        view.layer?.backgroundColor = panelBackground.cgColor
+        view.layer?.backgroundColor = NSColor.clear.cgColor
         view.layer?.cornerRadius = panelCornerRadius
         view.layer?.borderWidth = 1
         view.layer?.borderColor = hairline.cgColor

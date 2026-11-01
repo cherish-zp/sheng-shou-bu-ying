@@ -18,11 +18,11 @@ final class DelayButtonFactoryTests: XCTestCase {
         }
     }
 
-    func test_labelIsWhiteForDarkPanel() {
+    func test_labelIsDarkOnGlass() {
         let button = ToolbarButtonFactory.delayButton(seconds: 3, target: nil, action: nil)
         let color = button.attributedTitle.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
         let rgb = color?.usingColorSpace(.deviceRGB)
-        XCTAssertGreaterThan(rgb?.redComponent ?? 0, 0.5, "深色面板上标签应为亮色")
+        XCTAssertLessThan(rgb?.redComponent ?? 1, 0.4, "浅玻璃面板上标签应为深色")
     }
 
     func test_tagCarriesSeconds() {
