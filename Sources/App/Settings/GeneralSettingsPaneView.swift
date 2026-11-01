@@ -72,7 +72,8 @@ final class GeneralSettingsPaneView: NSView {
     }
 
     private func makeModuleRow(module: AppModule) -> NSView {
-        let suffix = module.defaultHotkey?.functionKeyLabel.map { " (\($0))" } ?? ""
+        // 快捷键标注与设置页同源：⌥A 等（旧 functionKeyLabel 对 ⌥ 体系返回 nil 导致后缀消失）
+        let suffix = HotkeyPreferences.load().displayLabel(for: module.id).map { " (\($0))" } ?? ""
         let button = NSButton(
             checkboxWithTitle: module.title + suffix,
             target: self,

@@ -377,7 +377,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let modulesHeader = menu.addItem(withTitle: "功能模块", action: nil, keyEquivalent: "")
         modulesHeader.isEnabled = false
         for module in moduleRegistry.modules {
-            let hotkeySuffix = module.defaultHotkey?.functionKeyLabel.map { " (\($0))" } ?? ""
+            // 快捷键标注与设置页同源：⌥A 等（旧 functionKeyLabel 对 ⌥ 体系返回 nil 导致后缀消失）
+            let hotkeySuffix = HotkeyPreferences.load().displayLabel(for: module.id).map { " (\($0))" } ?? ""
             let item = NSMenuItem(title: module.title + hotkeySuffix, action: #selector(performModule(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = module.id

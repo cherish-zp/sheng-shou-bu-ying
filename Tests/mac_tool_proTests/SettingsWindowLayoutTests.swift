@@ -17,7 +17,7 @@ final class SettingsWindowLayoutTests: XCTestCase {
         guard let split = window.contentView?.subviews.compactMap({ $0 as? NSSplitView }).first else {
             fatalError("设置窗口内应存在 NSSplitView")
         }
-        XCTAssertEqual(split.arrangedSubviews.count, 5, "应有「分类栏 + 通用 + 片段 + 贴图 + 录屏」五个子视图")
+        XCTAssertEqual(split.arrangedSubviews.count, 6, "应有「分类栏 + 通用 + 快捷键 + 片段 + 贴图 + 录屏」六个子视图")
         return split
     }
 
@@ -32,9 +32,9 @@ final class SettingsWindowLayoutTests: XCTestCase {
     }
 
     func test_layout_pinPaneSitsRightOfSidebar() {
-        let split = makeLaidOutSplitView(selectedCategory: 2)
+        let split = makeLaidOutSplitView(selectedCategory: 3)
         let sidebar = split.arrangedSubviews[0]
-        let pane = split.arrangedSubviews[3]
+        let pane = split.arrangedSubviews[4]
         XCTAssertGreaterThanOrEqual(
             pane.frame.minX, sidebar.frame.maxX - 0.5,
             "贴图面板应在分类栏右侧，不得与分类栏重叠（实际 pane.minX=\(pane.frame.minX), sidebar.maxX=\(sidebar.frame.maxX)）"
@@ -52,7 +52,7 @@ final class SettingsWindowLayoutTests: XCTestCase {
 
     func test_layout_paneContentFitsInsidePane() {
         let split = makeLaidOutSplitView()
-        let pane = split.arrangedSubviews[3]
+        let pane = split.arrangedSubviews[4]
         guard let stack = pane.subviews.compactMap({ $0 as? NSStackView }).first else {
             return XCTFail("贴图面板内应有纵向内容栈")
         }
@@ -96,7 +96,7 @@ final class SettingsWindowLayoutTests: XCTestCase {
 
     func test_layout_paneControlsDoNotOverlapEachOther() {
         let split = makeLaidOutSplitView()
-        let pane = split.arrangedSubviews[3]
+        let pane = split.arrangedSubviews[4]
         let controls = paneControls(in: pane)
 
         XCTAssertGreaterThanOrEqual(
@@ -118,7 +118,7 @@ final class SettingsWindowLayoutTests: XCTestCase {
 
     func test_layout_groupBoxContainsBothRadios() {
         let split = makeLaidOutSplitView()
-        let pane = split.arrangedSubviews[3]
+        let pane = split.arrangedSubviews[4]
 
         guard let box = findGroupBox(in: pane) else {
             return XCTFail("面板内应存在「呼吸灯样式」分组框")

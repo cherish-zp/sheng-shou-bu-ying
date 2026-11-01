@@ -2,18 +2,19 @@ import AVFoundation
 import AppKit
 
 /// 设置窗口：左侧分类栏 + 右侧详情面板（仿系统设置布局）。
-/// 现包含「通用」「快速片段」「贴图」三个分类。
+/// 现包含「通用」「快捷键」「快速片段」「贴图」「录屏」五个分类。
 final class SettingsWindow: NSWindow, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate {
 
     private var tableView: NSTableView!
     private var pinPane: PinSettingsPaneView!
     private var generalPane: GeneralSettingsPaneView!
+    private var hotkeyPane: HotkeySettingsPaneView!
     private var snippetPane: SnippetManagerView!
     private var recordingPane: RecordingSettingsPaneView!
     private let moduleRegistry: AppModuleRegistry
     private let onModuleStateChanged: (String, Bool) -> Void
 
-    private let sidebarItems = ["通用", "快速片段", "贴图", "录屏"]
+    private let sidebarItems = ["通用", "快捷键", "快速片段", "贴图", "录屏"]
     private static let cellID = NSUserInterfaceItemIdentifier("settingsSidebarCell")
 
     init(moduleRegistry: AppModuleRegistry, onModuleStateChanged: @escaping (String, Bool) -> Void) {
@@ -87,12 +88,14 @@ final class SettingsWindow: NSWindow, NSWindowDelegate, NSTableViewDataSource, N
         // 右侧详情：分类设置面板
         generalPane = GeneralSettingsPaneView(moduleRegistry: moduleRegistry)
         generalPane.onModuleStateChanged = onModuleStateChanged
+        hotkeyPane = HotkeySettingsPaneView()
         snippetPane = SnippetManagerView()
         pinPane = PinSettingsPaneView()
         recordingPane = RecordingSettingsPaneView()
 
         split.addArrangedSubview(sidebar)
         split.addArrangedSubview(generalPane)
+        split.addArrangedSubview(hotkeyPane)
         split.addArrangedSubview(snippetPane)
         split.addArrangedSubview(pinPane)
         split.addArrangedSubview(recordingPane)
@@ -127,9 +130,10 @@ final class SettingsWindow: NSWindow, NSWindowDelegate, NSTableViewDataSource, N
 
     private func applySelectedCategory(_ index: Int) {
         generalPane?.isHidden = index != 0
-        snippetPane?.isHidden = index != 1
-        pinPane?.isHidden = index != 2
-        recordingPane?.isHidden = index != 3
+        hotkeyPane?.isHidden = index != 1
+        snippetPane?.isHidden = index != 2
+        pinPane?.isHidden = index != 3
+        recordingPane?.isHidden = index != 4
     }
 
     // MARK: - NSTableView
