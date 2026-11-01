@@ -21,6 +21,8 @@ final class ClipboardHistoryModule: NSObject {
     private var lastChangeCount = NSPasteboard.general.changeCount
     private var pollTimer: Timer?
     private var window: NSPanel?
+    /// 图片外置存储（PNG 落盘 clipboard_images/，JSON 只存文件名防膨胀）。
+    private let imageStore: ClipboardImageStore
 
     // MARK: 面板状态
     private var searchField: NSSearchField?
@@ -51,14 +53,17 @@ final class ClipboardHistoryModule: NSObject {
     /// 图片像素尺寸缓存（ImageIO 属性读取，不解码像素）——缩略图高度计算用。
     private var imageSizeCache: [UUID: NSSize] = [:]
 
-    init(storageURL: URL? = nil) {
+    init(storageURL: URL? = nil, imagesDirectory: URL? = nil) {
         let dir = AppSupportDirectory.url
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         self.storageURL = storageURL ?? dir.appendingPathComponent("clipboard_history.json")
+        self.imageStore = ClipboardImageStore(directory: imagesDirectory ?? dir.appendingPathComponent("clipboard_images"))
         if let data = try? Data(contentsOf: self.storageURL),
            let loaded = try? JSONDecoder().decode(ClipboardHistoryStore.self, from: data) {
             store = loaded
         }
+        // 加载后清理孤儿图片（上次会话淘汰/删除的条目残留）
+        imageStore.purge(keeping: Set(store.items.compactMap(\.imageFile)))
         super.init()
     }
 
@@ -85,19 +90,27 @@ final class ClipboardHistoryModule: NSObject {
         guard board.changeCount != lastChangeCount else { return }
         lastChangeCount = board.changeCount
 
+        // 来源 app（frontmostApplication 启发式）：剪贴板变更瞬间的前台应用即复制来源
+        let source = NSWorkspace.shared.frontmostApplication
+        let sourceName = source?.localizedName
+        let sourceBundle = source?.bundleIdentifier
+
         if let text = board.string(forType: .string), !text.isEmpty {
-            store.add(ClipboardHistoryItem(kind: .text, text: text))
+            store.add(ClipboardHistoryItem(kind: .text, text: text,
+                                           sourceAppName: sourceName, sourceBundleID: sourceBundle))
         } else if let urls = board.readObjects(forClasses: [NSURL.self]) as? [URL],
                   !urls.isEmpty, urls.allSatisfy(\.isFileURL) {
             store.add(ClipboardHistoryItem(kind: .files, text: urls.map(\.lastPathComponent).joined(separator: ", "),
-                                           filePaths: urls.map(\.path)))
+                                           filePaths: urls.map(\.path),
+                                           sourceAppName: sourceName, sourceBundleID: sourceBundle))
         } else if let image = NSImage(pasteboard: board),
                   let tiff = image.tiffRepresentation,
                   let rep = NSBitmapImageRep(data: tiff),
                   let png = rep.representation(using: .png, properties: [:]),
                   png.count <= 2_000_000 {
             store.add(ClipboardHistoryItem(kind: .image, text: "图片 \(rep.pixelsWide)×\(rep.pixelsHigh)",
-                                           imageData: png))
+                                           imageData: png,
+                                           sourceAppName: sourceName, sourceBundleID: sourceBundle))
         } else {
             return
         }
@@ -106,9 +119,21 @@ final class ClipboardHistoryModule: NSObject {
     }
 
     private func persist() {
+        // 图片外置化：内存 imageData 落盘 clipboard_images/<uuid>.png，JSON 只存文件名
+        for item in store.items where item.kind == .image && item.imageData != nil && item.imageFile == nil {
+            if let fileName = imageStore.save(id: item.id, data: item.imageData!) {
+                store.attachImageFile(id: item.id, fileName: fileName)
+            }
+        }
+        imageStore.purge(keeping: Set(store.items.compactMap(\.imageFile)))
         if let data = try? JSONEncoder().encode(store) {
             try? data.write(to: storageURL, options: .atomic)
         }
+    }
+
+    /// 条目图片数据：内存优先（本轮捕获），否则读外置文件。
+    private func imageData(for item: ClipboardHistoryItem) -> Data? {
+        item.imageData ?? item.imageFile.flatMap { imageStore.load($0) }
     }
 
     // MARK: - 面板显示/隐藏
@@ -237,17 +262,19 @@ final class ClipboardHistoryModule: NSObject {
         scroll.documentView = stack
 
         content.addSubview(scroll)
-        // 横向滚动：固定 top/leading + 高度，宽度由卡片内容撑开（不约束 trailing）。
         NSLayoutConstraint.activate([
             scroll.topAnchor.constraint(equalTo: content.topAnchor, constant: 42),
             scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 10),
             scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -10),
             scroll.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -26),
         ])
+        // 横向滚动标准配方：top/leading/bottom 钉 contentView（高度=视口高），
+        // 宽度 ≥ 视口宽（卡片内容更宽时由 intrinsic 撑开）——否则 stack 宽度歧义、卡片零宽不可见。
         NSLayoutConstraint.activate([
             stack.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
             stack.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
-            stack.heightAnchor.constraint(equalTo: scroll.contentView.heightAnchor),
+            stack.bottomAnchor.constraint(equalTo: scroll.contentView.bottomAnchor),
+            stack.widthAnchor.constraint(greaterThanOrEqualTo: scroll.contentView.widthAnchor),
         ])
         cardStack = stack
         cardScroll = scroll
@@ -301,7 +328,8 @@ final class ClipboardHistoryModule: NSObject {
         for (offset, item) in displayed.enumerated() {
             let card = ClipboardCardView(item: item, index: offset + 1, badgeSymbol: modifierSymbol,
                                          thumbnail: thumbnail(for: item),
-                                         pixelSize: cachedPixelSize(for: item))
+                                         pixelSize: cachedPixelSize(for: item),
+                                         sourceIcon: sourceIcon(for: item))
             card.onActivate = { [weak self, weak card] in
                 guard let self, let card,
                       let index = self.displayed.firstIndex(where: { $0.id == card.item.id }) else { return }
@@ -321,10 +349,14 @@ final class ClipboardHistoryModule: NSObject {
                 self.persist()
                 self.reload()
             }
-            // 卡片高度撑满内容区。
-            card.widthAnchor.constraint(equalToConstant: Self.cardWidth).isActive = true
-            card.heightAnchor.constraint(equalTo: stack.heightAnchor).isActive = true
+            // 先入列再激活约束：在 addArrangedSubview 之前激活与 stack 的约束，
+            // 会与 NSStackView 加入子视图时的内部约束互斥（macOS 实测 abort）。
             stack.addArrangedSubview(card)
+            NSLayoutConstraint.activate([
+                card.widthAnchor.constraint(equalToConstant: Self.cardWidth),
+                card.topAnchor.constraint(equalTo: stack.topAnchor),
+                card.bottomAnchor.constraint(equalTo: stack.bottomAnchor),
+            ])
         }
     }
 
@@ -348,7 +380,7 @@ final class ClipboardHistoryModule: NSObject {
     private func cachedPixelSize(for item: ClipboardHistoryItem) -> NSSize {
         if let size = imageSizeCache[item.id] { return size }
         var size = NSSize(width: 0, height: 0)
-        if let data = item.imageData,
+        if let data = imageData(for: item),
            let source = CGImageSourceCreateWithData(data as CFData, nil),
            let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
             size = NSSize(width: props[kCGImagePropertyPixelWidth] as? CGFloat ?? 0,
@@ -360,10 +392,24 @@ final class ClipboardHistoryModule: NSObject {
 
     private func thumbnail(for item: ClipboardHistoryItem) -> NSImage? {
         if let cached = thumbnailCache[item.id] { return cached }
-        guard let data = item.imageData,
+        guard let data = imageData(for: item),
               let thumb = ClipboardThumbnail.make(fromPNG: data) else { return nil }
         thumbnailCache[item.id] = thumb
         return thumb
+    }
+
+    /// 来源 app 图标（bundleID → 安装路径 → 系统文件图标）；查不到返回 nil（不占位）。
+    private func sourceIcon(for item: ClipboardHistoryItem) -> NSImage? {
+        guard let bundleID = item.sourceBundleID else { return nil }
+        // 已在运行：直接取运行实例图标（最准）
+        if let running = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleID }) {
+            return running.icon
+        }
+        // 未运行：按安装路径取文件图标
+        if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+            return NSWorkspace.shared.icon(forFile: appURL.path)
+        }
+        return nil
     }
 
     // MARK: - 点击/热键 → 回写 + 粘贴
@@ -381,7 +427,7 @@ final class ClipboardHistoryModule: NSObject {
     private func writeBack(_ item: ClipboardHistoryItem) {
         let board = NSPasteboard.general
         board.clearContents()
-        if let data = item.imageData, let image = NSImage(data: data) {
+        if let data = imageData(for: item), let image = NSImage(data: data) {
             board.writeObjects([image])
         } else if let paths = item.filePaths {
             board.writeObjects(paths.map { URL(fileURLWithPath: $0) as NSURL })
@@ -500,14 +546,14 @@ final class ClipboardCardView: NSView {
     private var hoverArea: NSTrackingArea?
 
     init(item: ClipboardHistoryItem, index: Int, badgeSymbol: String,
-         thumbnail: NSImage?, pixelSize: NSSize) {
+         thumbnail: NSImage?, pixelSize: NSSize, sourceIcon: NSImage? = nil) {
         self.item = item
         self.index = index
         self.badgeSymbol = badgeSymbol
         super.init(frame: .zero)
         wantsLayer = true
         UITheme.styleCard(self, tint: selfTintColor)
-        buildSubviews(thumbnail: thumbnail, pixelSize: pixelSize)
+        buildSubviews(thumbnail: thumbnail, pixelSize: pixelSize, sourceIcon: sourceIcon)
     }
 
     required init?(coder: NSCoder) { fatalError("不支持 storyboard") }
@@ -531,7 +577,7 @@ final class ClipboardCardView: NSView {
 
     // MARK: 子视图
 
-    private func buildSubviews(thumbnail: NSImage?, pixelSize: NSSize) {
+    private func buildSubviews(thumbnail: NSImage?, pixelSize: NSSize, sourceIcon: NSImage?) {
         // 左上：序号徽章 ⌥N（超出 9 不显示）。
         if let digitLabel = ClipboardDigitKeyCodes.label(for: index) {
             let badge = NSTextField(labelWithString: "\(badgeSymbol)\(digitLabel)")
@@ -582,7 +628,7 @@ final class ClipboardCardView: NSView {
         content.translatesAutoresizingMaskIntoConstraints = false
         addSubview(content)
 
-        // 底部信息行。
+        // 底部信息行：来源 app 图标（可选）+ 信息文字。
         let info = NSTextField(labelWithString: infoText)
         info.font = .systemFont(ofSize: 10)
         info.textColor = UITheme.textSecondary
@@ -590,7 +636,24 @@ final class ClipboardCardView: NSView {
         info.translatesAutoresizingMaskIntoConstraints = false
         addSubview(info)
 
+        let infoLeading: NSLayoutConstraint
+        if let sourceIcon {
+            let iconView = NSImageView(image: sourceIcon)
+            iconView.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(iconView)
+            NSLayoutConstraint.activate([
+                iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+                iconView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+                iconView.widthAnchor.constraint(equalToConstant: 12),
+                iconView.heightAnchor.constraint(equalToConstant: 12),
+            ])
+            infoLeading = info.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 4)
+        } else {
+            infoLeading = info.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12)
+        }
+
         NSLayoutConstraint.activate([
+            infoLeading,
             deleteButton.topAnchor.constraint(equalTo: topAnchor, constant: 7),
             deleteButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             deleteButton.widthAnchor.constraint(equalToConstant: 20),
@@ -605,7 +668,6 @@ final class ClipboardCardView: NSView {
             content.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             content.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
 
-            info.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             info.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
             info.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
 
@@ -658,19 +720,28 @@ final class ClipboardCardView: NSView {
     /// 内容区可用宽度（卡宽 - 左右 12 边距）。
     private static var contentWidth: CGFloat { 236 - 12 * 2 }
 
-    /// 底部信息行：相对时间 + 类型补充信息（图片像素尺寸 / 字符数 / 文件数 / KB）。
+    /// 底部信息行：相对时间 + 类型补充信息（图片像素尺寸 / 字符数 / 文件数 / KB）+ 来源 app。
     private var infoText: String {
         let relative = RelativeTimeFormatter.label(from: item.addedAt, to: Date())
+        let source = item.sourceAppName.map { " · \($0)" } ?? ""
         switch item.kind {
         case .text:
-            return "\(relative) · \(item.text.count) 字符"
+            return "\(relative) · \(item.text.count) 字符\(source)"
         case .image:
-            let bytes = item.imageData?.count ?? 0
-            let kb = max(1, (bytes + 1023) / 1024)
-            return "\(relative) · \(item.text) · \(kb) KB"
+            let kb = max(1, (Self.externalizedByteSize(item) + 1023) / 1024)
+            return "\(relative) · \(item.text) · \(kb) KB\(source)"
         case .files:
-            return "\(relative) · \(item.filePaths?.count ?? 0) 个文件"
+            return "\(relative) · \(item.filePaths?.count ?? 0) 个文件\(source)"
         }
+    }
+
+    /// 图片字节：内存 PNG 优先，否则外置文件大小（仅取元信息，不读内容）。
+    private static func externalizedByteSize(_ item: ClipboardHistoryItem) -> Int {
+        if let data = item.imageData { return data.count }
+        guard let file = item.imageFile else { return 0 }
+        let url = AppSupportDirectory.url.appendingPathComponent("clipboard_images/\(file)")
+        let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size]) as? Int
+        return size ?? 0
     }
 
     // MARK: 交互

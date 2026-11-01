@@ -277,6 +277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for (id, hotkey) in failures {
             DiagLog.write("Hotkey register failed: \(id) keyCode=\(hotkey.keyCode) mods=\(hotkey.modifiers)")
         }
+        DiagLog.write("Hotkey plan applied: primary=\(prefs.primaryModifier.rawValue) bindings=\(prefs.bindings.count) failures=\(failures.count)")
         return failures
     }
 

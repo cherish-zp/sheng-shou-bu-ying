@@ -59,16 +59,22 @@ public struct ClipboardHistoryItem: Codable, Equatable, Identifiable {
 
     public let id: UUID
     public let kind: Kind
-    /// 文本内容；image/files 为摘要（image 存 PNG data 的 base64 太重——图片条目存路径化摘要，
-    /// 实际图片数据由 App 层的独立缓存持有）。
+    /// 文本内容；image/files 为摘要（image 存「图片 W×H」）。
     public let text: String
     public let imageData: Data?
     public let filePaths: [String]?
     public var addedAt: Date
     public var isFavorite: Bool
+    /// 图片外置文件名（相对 App Support/clipboard_images/）；PNG 不再内联进 JSON。
+    public var imageFile: String?
+    /// 来源 app（frontmostApplication 启发式捕获；卡片底部展示来源图标+名称）。
+    public var sourceAppName: String?
+    public var sourceBundleID: String?
 
     public init(id: UUID = UUID(), kind: Kind, text: String, imageData: Data? = nil,
-                filePaths: [String]? = nil, addedAt: Date = Date(), isFavorite: Bool = false) {
+                filePaths: [String]? = nil, addedAt: Date = Date(), isFavorite: Bool = false,
+                imageFile: String? = nil, sourceAppName: String? = nil,
+                sourceBundleID: String? = nil) {
         self.id = id
         self.kind = kind
         self.text = text
@@ -76,6 +82,94 @@ public struct ClipboardHistoryItem: Codable, Equatable, Identifiable {
         self.filePaths = filePaths
         self.addedAt = addedAt
         self.isFavorite = isFavorite
+        self.imageFile = imageFile
+        self.sourceAppName = sourceAppName
+        self.sourceBundleID = sourceBundleID
+    }
+
+    // MARK: Codable（手写：外置后不内联 PNG，decode 全字段可选兼容旧 JSON）
+
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, text, imageData, filePaths, addedAt, isFavorite
+        case imageFile, sourceAppName, sourceBundleID
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        kind = try c.decode(Kind.self, forKey: .kind)
+        text = try c.decode(String.self, forKey: .text)
+        imageData = try c.decodeIfPresent(Data.self, forKey: .imageData)
+        filePaths = try c.decodeIfPresent([String].self, forKey: .filePaths)
+        addedAt = try c.decode(Date.self, forKey: .addedAt)
+        isFavorite = try c.decode(Bool.self, forKey: .isFavorite)
+        imageFile = try c.decodeIfPresent(String.self, forKey: .imageFile)
+        sourceAppName = try c.decodeIfPresent(String.self, forKey: .sourceAppName)
+        sourceBundleID = try c.decodeIfPresent(String.self, forKey: .sourceBundleID)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(kind, forKey: .kind)
+        try c.encode(text, forKey: .text)
+        try c.encode(filePaths, forKey: .filePaths)
+        try c.encode(addedAt, forKey: .addedAt)
+        try c.encode(isFavorite, forKey: .isFavorite)
+        try c.encode(imageFile, forKey: .imageFile)
+        try c.encode(sourceAppName, forKey: .sourceAppName)
+        try c.encode(sourceBundleID, forKey: .sourceBundleID)
+        // imageData 只在未外置时编码（兜底旧数据路径）；外置后由 imageFile 承载
+        if imageFile == nil {
+            try c.encode(imageData, forKey: .imageData)
+        }
+    }
+}
+
+/// 剪贴板图片外置存储：PNG 按条目 id 落盘 App Support/clipboard_images/<uuid>.png，
+/// JSON 只存文件名——避免内联 base64 把 clipboard_history.json 撑到几十 MB。
+public struct ClipboardImageStore {
+    public let directory: URL
+
+    public init(directory: URL) {
+        self.directory = directory
+    }
+
+    /// 保存图片（同 id 覆盖），返回文件名；失败返回 nil。
+    @discardableResult
+    public func save(id: UUID, data: Data) -> String? {
+        let fileName = id.uuidString + ".png"
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try data.write(to: directory.appendingPathComponent(fileName), options: .atomic)
+            return fileName
+        } catch {
+            return nil
+        }
+    }
+
+    /// 读取外置图片；缺失/读取失败返回 nil。
+    public func load(_ fileName: String) -> Data? {
+        guard Self.isValidFileName(fileName) else { return nil }
+        return try? Data(contentsOf: directory.appendingPathComponent(fileName))
+    }
+
+    public func remove(_ fileName: String) {
+        guard Self.isValidFileName(fileName) else { return }
+        try? FileManager.default.removeItem(at: directory.appendingPathComponent(fileName))
+    }
+
+    /// 清理孤儿图片：删除目录中不在 keeping 集合里的文件（淘汰/删除条目后调用）。
+    public func purge(keeping fileNames: Set<String>) {
+        guard let contents = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return }
+        for name in contents where !fileNames.contains(name) && Self.isValidFileName(name) {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
+        }
+    }
+
+    /// 文件名白名单：uuid.png 形态，拒绝路径穿越。
+    private static func isValidFileName(_ name: String) -> Bool {
+        !name.isEmpty && !name.contains("/") && name.hasSuffix(".png")
     }
 }
 
@@ -110,6 +204,14 @@ public struct ClipboardHistoryStore: Codable, Equatable {
     public mutating func toggleFavorite(id: UUID) {
         guard let index = items.firstIndex(where: { $0.id == id }) else { return }
         items[index].isFavorite.toggle()
+    }
+
+    /// 记录图片外置文件名（持久化前由 Module 调用）；条目不存在返回 false。
+    @discardableResult
+    public mutating func attachImageFile(id: UUID, fileName: String) -> Bool {
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return false }
+        items[index].imageFile = fileName
+        return true
     }
 
     /// 删除指定条目；id 不存在时静默忽略（卡片 × 删除、未知 id 防御）。
