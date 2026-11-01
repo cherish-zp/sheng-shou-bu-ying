@@ -2,8 +2,9 @@ import AppKit
 import ImageIO
 
 /// 剪贴板历史：1 秒轮询 changeCount 捕获变更（文本/图片/文件），持久化到 App Support。
-/// 面板为浮引式横向卡片流：约 1500×340 居中悬浮、流光玻璃背景、顶部搜索 + 类型 chips、
-/// 卡片横向滚动；点击卡片回写剪贴板并模拟 ⌘V 自动粘贴；面板可见时 ⌥1~⌥9 直达对应卡片。
+/// 面板为浮引式贴底横条：宽度近全屏、高上限 300、贴屏幕底边（仅顶部两角圆角）、流光玻璃背景、
+/// 顶部搜索 + 类型 chips + [钉住][✕] +「…」菜单、卡片流横向滚动（滚轮纵转横）；
+/// 点击卡片回写剪贴板并模拟 ⌘V 自动粘贴；面板可见时 ⌥1~⌥9 直达对应卡片。
 final class ClipboardHistoryModule: NSObject {
 
     let id = "clipboardHistory"
@@ -13,8 +14,12 @@ final class ClipboardHistoryModule: NSObject {
     private static let cardHotkeySignature = OSType(0x636C6970)
     /// 卡片统一宽度。
     private static let cardWidth: CGFloat = 236
-    /// 面板理想尺寸（小屏按可见区夹持）。
-    private static let idealPanelSize = NSSize(width: 1500, height: 340)
+    /// 贴底横条：宽 = 屏可见区宽 - 16，小屏防呆下限。
+    private static let minPanelWidth: CGFloat = 700
+    /// 贴底横条高度上限。
+    private static let maxPanelHeight: CGFloat = 300
+    /// 暂停捕获的 UserDefaults 键。
+    private static let capturePausedDefaultsKey = "clipboardCapturePaused"
 
     private let storageURL: URL
     private var store = ClipboardHistoryStore()
@@ -27,6 +32,8 @@ final class ClipboardHistoryModule: NSObject {
     // MARK: 面板状态
     private var searchField: NSSearchField?
     private var kindSegmented: NSSegmentedControl?
+    private var pinButton: NSButton?
+    private var moreButton: NSButton?
     private var cardStack: NSStackView?
     private var cardScroll: NSScrollView?
     private var hintLabel: NSTextField?
@@ -38,6 +45,12 @@ final class ClipboardHistoryModule: NSObject {
     private var modifierSymbol = "⌥"
     /// 正在隐藏面板（orderOut 会触发 didResignKey，用标志避免自我递归关窗）。
     private var isDismissing = false
+    /// 钉住：true 时失焦不自动关闭（Esc 仍关闭）；会话内状态，不持久化，默认未钉住。
+    private var isPinned = false
+    /// 「…」菜单 / 确认框弹出期间抑制失焦自动关闭（菜单窗口成为 key 会触发 didResignKey）。
+    private var isShowingMenu = false
+    /// 暂停剪贴板捕获（「…」菜单切换；UserDefaults 持久化）。
+    private var isCapturePaused = false
     /// 显示面板时的前台应用：自动粘贴前把焦点还给它的目标。
     private var frontmostAppAtShow: NSRunningApplication?
     private var escMonitor: Any?
@@ -62,6 +75,8 @@ final class ClipboardHistoryModule: NSObject {
            let loaded = try? JSONDecoder().decode(ClipboardHistoryStore.self, from: data) {
             store = loaded
         }
+        // 恢复上次会话的捕获暂停态
+        isCapturePaused = UserDefaults.standard.bool(forKey: Self.capturePausedDefaultsKey)
         // 加载后清理孤儿图片（上次会话淘汰/删除的条目残留）
         imageStore.purge(keeping: Set(store.items.compactMap(\.imageFile)))
         super.init()
@@ -88,7 +103,10 @@ final class ClipboardHistoryModule: NSObject {
     private func pollPasteboard() {
         let board = NSPasteboard.general
         guard board.changeCount != lastChangeCount else { return }
+        // lastChangeCount 必须照常刷新：暂停期间不捕获内容，但恢复瞬间不能把
+        // 暂停期积压的变更当一次新变更（保持「跳过暂停期」语义）。
         lastChangeCount = board.changeCount
+        guard !isCapturePaused else { return }
 
         // 来源 app（frontmostApplication 启发式）：剪贴板变更瞬间的前台应用即复制来源
         let source = NSWorkspace.shared.frontmostApplication
@@ -144,8 +162,8 @@ final class ClipboardHistoryModule: NSObject {
         if window == nil { buildWindow() }
         guard let panel = window else { return }
         NSApp.activate(ignoringOtherApps: true)
+        positionAtBottom(panel)
         panel.makeKeyAndOrderFront(nil)
-        UITheme.center(panel)
         reload()
     }
 
@@ -179,6 +197,9 @@ final class ClipboardHistoryModule: NSObject {
         content.wantsLayer = true
         content.layer?.backgroundColor = UITheme.panelBackground.cgColor
         content.layer?.cornerRadius = UITheme.panelCornerRadius
+        // 贴底横条仅顶部两角圆角，底部两角贴屏幕边。内容视图非翻转（原点左下），
+        // CALayer 的 MaxY 两角才是视觉顶角（MinY 两角贴底边——iOS 坐标习惯在此相反）。
+        content.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
         content.layer?.masksToBounds = true
         content.layer?.borderWidth = 1
         content.layer?.borderColor = UITheme.hairline.cgColor
@@ -191,13 +212,33 @@ final class ClipboardHistoryModule: NSObject {
         installDismissHandlers()
     }
 
-    /// 面板尺寸：理想 1500×340，按鼠标所在屏可见区夹持（不小于 700×260）。
+    /// 面板尺寸（贴底横条）：宽 = 屏可见区宽 - 16、高 = min(300, 可见区高 - 80)；
+    /// 宽 < 700 时取 700（小屏防呆，超宽由 positionAtBottom 改居中兜底）、高保留下限 260 防内容约束塌缩。
     private func clampedPanelSize() -> NSSize {
-        let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
-        let visible = screen?.visibleFrame.size ?? NSSize(width: 1512, height: 900)
-        let width = min(Self.idealPanelSize.width, max(700, visible.width - 40))
-        let height = min(Self.idealPanelSize.height, max(260, visible.height - 80))
+        let visible = bottomAnchorVisibleFrame()?.size ?? NSSize(width: 1512, height: 900)
+        let width = max(visible.width - 16, Self.minPanelWidth)
+        let height = min(Self.maxPanelHeight, max(260, visible.height - 80))
         return NSSize(width: width, height: height)
+    }
+
+    /// 贴底定位：按鼠标所在屏 visibleFrame（已排除 Dock/菜单栏）贴底边显示；
+    /// 每次呼出重算（屏间切换自适应）。宽被 700 下限撑破屏宽时改水平居中。
+    private func positionAtBottom(_ panel: NSPanel) {
+        guard let visible = bottomAnchorVisibleFrame() else { return }
+        let size = clampedPanelSize()
+        let origin: NSPoint
+        if size.width > visible.width {
+            origin = NSPoint(x: visible.midX - size.width / 2, y: visible.minY)
+        } else {
+            origin = NSPoint(x: visible.minX + 8, y: visible.minY)
+        }
+        panel.setFrame(NSRect(origin: origin, size: size), display: false)
+    }
+
+    /// 鼠标所在屏的可见区（已排除 Dock/菜单栏）；找不到回退主屏。
+    private func bottomAnchorVisibleFrame() -> NSRect? {
+        let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+        return screen?.visibleFrame
     }
 
     /// 顶栏：搜索框（左）+ 类型 chips（中）+ 关闭按钮（右）。
@@ -225,9 +266,30 @@ final class ClipboardHistoryModule: NSObject {
         close.font = .systemFont(ofSize: 13, weight: .medium)
         close.translatesAutoresizingMaskIntoConstraints = false
 
+        // 图钉：钉住后失焦不自动关闭（Esc 仍关），钉住时 pin.fill + accent 色。
+        let pin = NSButton()
+        pin.isBordered = false
+        pin.image = NSImage(systemSymbolName: "pin", accessibilityDescription: "钉住面板")
+        pin.image?.isTemplate = true
+        pin.contentTintColor = UITheme.textSecondary
+        pin.target = self
+        pin.action = #selector(pinClicked)
+        pin.toolTip = "钉住面板（失焦不自动关闭）"
+        pin.translatesAutoresizingMaskIntoConstraints = false
+
+        // 「…」更多操作菜单：清空全部历史 / 暂停捕获 / 打开数据文件夹 / 设置…
+        let more = NSButton(title: "…", target: self, action: #selector(moreClicked))
+        more.isBordered = false
+        more.contentTintColor = UITheme.textSecondary
+        more.font = .systemFont(ofSize: 13, weight: .medium)
+        more.toolTip = "更多操作"
+        more.translatesAutoresizingMaskIntoConstraints = false
+
         content.addSubview(search)
         content.addSubview(segmented)
         content.addSubview(close)
+        content.addSubview(pin)
+        content.addSubview(more)
         NSLayoutConstraint.activate([
             search.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 14),
             search.centerYAnchor.constraint(equalTo: content.topAnchor, constant: 24),
@@ -237,17 +299,28 @@ final class ClipboardHistoryModule: NSObject {
             segmented.centerXAnchor.constraint(equalTo: content.centerXAnchor),
             segmented.centerYAnchor.constraint(equalTo: search.centerYAnchor),
 
+            // 右侧从左到右 [钉住][✕]（「…」在更左，✕ 保持最右）
             close.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -14),
             close.centerYAnchor.constraint(equalTo: search.centerYAnchor),
             close.widthAnchor.constraint(equalToConstant: 24),
+
+            pin.trailingAnchor.constraint(equalTo: close.leadingAnchor, constant: -6),
+            pin.centerYAnchor.constraint(equalTo: search.centerYAnchor),
+            pin.widthAnchor.constraint(equalToConstant: 24),
+
+            more.trailingAnchor.constraint(equalTo: pin.leadingAnchor, constant: -6),
+            more.centerYAnchor.constraint(equalTo: search.centerYAnchor),
+            more.widthAnchor.constraint(equalToConstant: 24),
         ])
         searchField = search
         kindSegmented = segmented
+        pinButton = pin
+        moreButton = more
     }
 
     /// 卡片流：横向 NSScrollView + NSStackView，卡片高撑满内容区。
     private func buildCardFlow(in content: NSView) {
-        let scroll = NSScrollView()
+        let scroll = HorizontalScrollScrollView()
         scroll.hasHorizontalScroller = true
         scroll.autohidesScrollers = true
         scroll.drawsBackground = false
@@ -305,7 +378,8 @@ final class ClipboardHistoryModule: NSObject {
         resignObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didResignKeyNotification, object: panel, queue: .main
         ) { [weak self] _ in
-            guard let self, !self.isDismissing else { return }
+            // 钉住或「…」菜单/确认框弹出期间不自动关闭（菜单窗口成为 key 会触发 didResignKey）。
+            guard let self, !self.isDismissing, !self.isPinned, !self.isShowingMenu else { return }
             self.hidePanel()
         }
     }
@@ -517,12 +591,121 @@ final class ClipboardHistoryModule: NSObject {
     @objc private func closeClicked() {
         hidePanel()
     }
+
+    /// 图钉：切换钉住态（失焦是否自动关闭），按钮外观同步刷新。
+    @objc private func pinClicked() {
+        isPinned.toggle()
+        refreshPinButton()
+    }
+
+    private func refreshPinButton() {
+        guard let pin = pinButton else { return }
+        pin.image = NSImage(systemSymbolName: isPinned ? "pin.fill" : "pin",
+                            accessibilityDescription: isPinned ? "取消钉住" : "钉住面板")
+        pin.image?.isTemplate = true
+        pin.contentTintColor = isPinned ? UITheme.accent : UITheme.textSecondary
+        pin.toolTip = isPinned ? "取消钉住" : "钉住面板（失焦不自动关闭）"
+    }
+
+    /// 「…」菜单：清空全部历史 / 暂停-恢复捕获 / 打开数据文件夹 / 设置…。
+    @objc private func moreClicked() {
+        guard let more = moreButton else { return }
+        let menu = NSMenu()
+
+        let clearItem = NSMenuItem(title: "清空全部历史", action: #selector(clearAllClicked), keyEquivalent: "")
+        clearItem.target = self
+        // destructive 红色标题（.attributedTitle 覆盖默认渲染）
+        clearItem.attributedTitle = NSAttributedString(
+            string: "清空全部历史",
+            attributes: [.font: NSFont.systemFont(ofSize: 13),
+                         .foregroundColor: UITheme.destructive])
+
+        // 动态标题 + 勾选标注当前暂停态；每次弹出重建菜单，标题/状态自然最新。
+        let pauseItem = NSMenuItem(title: isCapturePaused ? "恢复捕获" : "暂停捕获",
+                                   action: #selector(toggleCapturePausedClicked), keyEquivalent: "")
+        pauseItem.target = self
+        if isCapturePaused { pauseItem.state = .on }
+
+        let folderItem = NSMenuItem(title: "打开数据文件夹", action: #selector(openDataFolderClicked), keyEquivalent: "")
+        folderItem.target = self
+
+        let settingsItem = NSMenuItem(title: "设置…", action: #selector(openSettingsClicked), keyEquivalent: "")
+        settingsItem.target = self
+
+        menu.items = [clearItem, pauseItem, folderItem, settingsItem]
+
+        // 菜单窗口成为 key 会触发 didResignKey；弹出期间抑制失焦自动关闭。
+        isShowingMenu = true
+        defer { isShowingMenu = false }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: more.bounds.minY - 4), in: more)
+    }
+
+    /// 清空全部历史：确认框 → 清空条目 + 全量清除图片文件 + 刷新缓存与界面。
+    @objc private func clearAllClicked() {
+        let count = store.items.count
+        let alert = NSAlert()
+        alert.messageText = "清空全部历史？"
+        alert.informativeText = "将删除全部 \(count) 条历史与图片文件，不可恢复。"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "清空")
+        alert.addButton(withTitle: "取消")
+        // 模态确认框同样夺 key（菜单弹出期已置标志，此处双保险覆盖异步派发时序）。
+        isShowingMenu = true
+        defer { isShowingMenu = false }
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        store.clear()
+        imageStore.purge(keeping: [])  // 全部条目已清，图片文件全量删除
+        thumbnailCache.removeAll()
+        imageSizeCache.removeAll()
+        persist()  // 内部按剩余条目（空集）再 purge + 写 JSON
+        reload()
+    }
+
+    /// 暂停/恢复剪贴板捕获（UserDefaults 持久化，重启后保持）。
+    @objc private func toggleCapturePausedClicked() {
+        isCapturePaused.toggle()
+        UserDefaults.standard.set(isCapturePaused, forKey: Self.capturePausedDefaultsKey)
+    }
+
+    /// 打开数据文件夹（Finder 选中 JSON，定位到 App Support 数据目录）。
+    @objc private func openDataFolderClicked() {
+        NSWorkspace.shared.activateFileViewerSelecting([storageURL])
+    }
+
+    /// 设置…：AppDelegate.showSettings 是 @objc private 无参方法，运行时选择器可达；
+    /// 不引入 AppDelegate 类型依赖（保持模块解耦），responds + perform 保守调用。
+    @objc private func openSettingsClicked() {
+        let settings = Selector(("showSettings"))
+        if let delegate = NSApp.delegate, delegate.responds(to: settings) {
+            delegate.perform(settings, with: nil)
+        }
+    }
 }
 
 // MARK: - 面板窗口（borderless NSPanel，可成为 key 以支持搜索框输入）
 
 final class ClipboardPanelWindow: NSPanel {
     override var canBecomeKey: Bool { true }
+}
+
+// MARK: - 卡片流横向滚动视图（滚轮纵转横）
+
+/// 贴底横条没有纵向内容：纵向滚轮（|deltaY| > |deltaX|）转为横向浏览卡片流，
+/// 横向滚动照常透传 super。scroll(to:) 自带 documentView 边界夹持，滚到头自然停；
+/// 惯性沿用合成滚轮的 momentum 事件，不做额外动量。
+final class HorizontalScrollScrollView: NSScrollView {
+    override func scrollWheel(with event: NSEvent) {
+        // contentView 为非可选；无内容文档时透传 super 即可
+        guard abs(event.deltaY) > abs(event.deltaX), documentView != nil else {
+            super.scrollWheel(with: event)
+            return
+        }
+        // 向下滑 = 向右看内容：origin.x += deltaY（macOS delta 符号惯例，真机验证手感）
+        let clip = contentView
+        let origin = clip.bounds.origin
+        clip.scroll(to: NSPoint(x: origin.x + event.deltaY, y: origin.y))
+        reflectScrolledClipView(clip)
+    }
 }
 
 // MARK: - 卡片视图

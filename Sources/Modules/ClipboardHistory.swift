@@ -220,6 +220,11 @@ public struct ClipboardHistoryStore: Codable, Equatable {
         items.remove(at: index)
     }
 
+    /// 清空全部条目（面板「…」菜单 → 清空全部历史；图片文件由 Module 层另行 purge）。
+    public mutating func clear() {
+        items = []
+    }
+
     /// 展示序：收藏置顶（组内按时间倒序）。
     public var displayOrder: [ClipboardHistoryItem] {
         let favorites = items.filter(\.isFavorite)

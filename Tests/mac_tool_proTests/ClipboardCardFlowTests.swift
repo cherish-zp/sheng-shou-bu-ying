@@ -38,6 +38,26 @@ final class ClipboardCardFlowTests: XCTestCase {
         XCTAssertEqual(store.displayOrder.map(\.text), ["a"], "删掉收藏条目后置顶位让出")
     }
 
+    // MARK: - ClipboardHistoryStore.clear
+
+    func test_store_clear_emptiesItems() {
+        var store = ClipboardHistoryStore()
+        store.add(item("a"))
+        store.add(item("b", favorite: true))
+        store.clear()
+        XCTAssertTrue(store.items.isEmpty, "clear 后条目全部清空")
+        XCTAssertTrue(store.displayOrder.isEmpty, "clear 后展示序（含收藏置顶）也为空")
+    }
+
+    func test_store_clear_thenAdd_works() {
+        var store = ClipboardHistoryStore()
+        store.add(item("a"))
+        store.clear()
+        store.add(item("b"))
+        XCTAssertEqual(store.items.map(\.text), ["b"], "清空后能正常继续 add")
+        XCTAssertEqual(store.items.first?.isFavorite, false, "新条目不继承任何残留状态")
+    }
+
     // MARK: - ClipboardCardFilter
 
     private func textItem(_ text: String) -> ClipboardHistoryItem {
