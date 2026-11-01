@@ -112,6 +112,12 @@ public struct ClipboardHistoryStore: Codable, Equatable {
         items[index].isFavorite.toggle()
     }
 
+    /// 删除指定条目；id 不存在时静默忽略（卡片 × 删除、未知 id 防御）。
+    public mutating func remove(id: UUID) {
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        items.remove(at: index)
+    }
+
     /// 展示序：收藏置顶（组内按时间倒序）。
     public var displayOrder: [ClipboardHistoryItem] {
         let favorites = items.filter(\.isFavorite)
@@ -130,5 +136,59 @@ public struct ClipboardHistoryStore: Codable, Equatable {
             }
         }
         return result
+    }
+}
+
+/// 卡片流过滤（纯逻辑，TDD）：类型 chips + 搜索框组合过滤。
+/// 搜索匹配条目 text（文本内容 / 文件名摘要 / 图片「图片 W×H」摘要），大小写不敏感。
+public enum ClipboardCardFilter {
+
+    /// 过滤：kind 为 nil = 全部；searchText 纯空白视为不过滤；两者同时生效（交集）。
+    public static func filter(items: [ClipboardHistoryItem], searchText: String,
+                              kind: ClipboardHistoryItem.Kind?) -> [ClipboardHistoryItem] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return items.filter { item in
+            if let kind = kind, item.kind != kind { return false }
+            if query.isEmpty { return true }
+            return item.text.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+        }
+    }
+}
+
+/// 数字键码表（卡片序号热键 ⌥1~⌥9 用；键码对照 HIToolbox kVK_ANSI_*）。
+public enum ClipboardDigitKeyCodes {
+
+    /// 数字 → 键码：1=18 2=19 3=20 4=21 5=23 6=22 7=26 8=28 9=25 0=29。
+    /// 0 保留在表内便于显示，但热键只注册 1~9（第 10 张卡无徽章）。
+    public static let keyCodes: [Int: UInt32] = [
+        1: 18, 2: 19, 3: 20, 4: 21, 5: 23,
+        6: 22, 7: 26, 8: 28, 9: 25, 0: 29,
+    ]
+
+    /// 徽章文本：1 → "1"…9 → "9"；表外返回 nil（不显示徽章）。
+    public static func label(for digit: Int) -> String? {
+        guard keyCodes[digit] != nil, (1...9).contains(digit) else { return nil }
+        return String(digit)
+    }
+}
+
+/// 相对时间格式化（纯逻辑，TDD）：「刚刚 / N 分钟前 / N 小时前 / N 天前 / yyyy-MM-dd」。
+/// 时区显式注入，测试用固定时区防 CI 与本地差异。
+public enum RelativeTimeFormatter {
+
+    /// to 晚于 from 的间隔分档：<60s 刚刚、<1h 分钟前、<24h 小时前、<7 天 天前，否则日期。
+    /// 时钟回拨（to 早于 from）按「刚刚」处理。
+    public static func label(from: Date, to: Date, timeZone: TimeZone = .current) -> String {
+        let interval = to.timeIntervalSince(from)
+        guard interval >= 0 else { return "刚刚" }
+        if interval < 60 { return "刚刚" }
+        if interval < 3600 { return "\(Int(interval / 60)) 分钟前" }
+        if interval < 86400 { return "\(Int(interval / 3600)) 小时前" }
+        if interval < 7 * 86400 { return "\(Int(interval / 86400)) 天前" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = timeZone
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter.string(from: to)
     }
 }

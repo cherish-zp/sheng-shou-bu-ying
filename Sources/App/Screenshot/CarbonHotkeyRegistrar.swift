@@ -3,11 +3,17 @@ import Foundation
 
 /// 生产环境热键注册器：基于 Carbon RegisterEventHotKey 实现全局快捷键。
 /// 运行在非沙盒菜单栏 App 内，可响应 F1 等全局按键。
+/// 支持多实例并存（全局热键 + 剪贴板卡片序号热键）：各实例用独立 signature
+/// 注册，回调只消费自己 signature 且已注册的 id，其余事件透传给 handler 链
+/// 上的下一个 handler（返回 eventNotHandledErr）。
 final class CarbonHotkeyRegistrar: HotkeyRegistrar {
     var onTrigger: ((UInt32) -> Void)?
 
     private var registered: [UInt32: EventHotKeyRef] = [:]
-    init() {
+    /// 本实例的 EventHotKeyID.signature（区分并存的多组热键）。
+    private let signature: OSType
+    init(signature: OSType = OSType(0x6D745F70)) {
+        self.signature = signature
         DiagLog.write("CarbonHotkeyRegistrar init")
 
         // 安装 Carbon 事件处理器（全局热键回调）。
@@ -29,6 +35,11 @@ final class CarbonHotkeyRegistrar: HotkeyRegistrar {
                 DiagLog.write("GetEventParameter failed: \(status)")
                 return noErr
             }
+            // 多实例隔离：signature 不匹配或 id 未注册 → 透传，不消费事件。
+            guard hotKeyID.signature == self.signature,
+                  self.registered[hotKeyID.id] != nil else {
+                return OSStatus(eventNotHandledErr)
+            }
             DiagLog.write("hotkey callback: id=\(hotKeyID.id) signature=0x\(String(hotKeyID.signature, radix: 16))")
             self.onTrigger?(hotKeyID.id)
             return noErr
@@ -40,7 +51,7 @@ final class CarbonHotkeyRegistrar: HotkeyRegistrar {
 
     @discardableResult
     func register(id: UInt32, keyCode: UInt32, modifiers: UInt32) -> Bool {
-        let hotKeyID = EventHotKeyID(signature: OSType(0x6D745F70), id: id)
+        let hotKeyID = EventHotKeyID(signature: signature, id: id)
         var ref: EventHotKeyRef?
         let status = RegisterEventHotKey(keyCode, modifiers, hotKeyID,
                                          GetApplicationEventTarget(), 0, &ref)
