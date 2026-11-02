@@ -194,9 +194,10 @@ final class HotkeySettingsLogicTests: XCTestCase {
         XCTAssertEqual(checked, 13, "应校验全部 13 个按钮")
     }
 
-    /// 回归：滚动文档必须钉顶（间距小）且底边 ≥ 视口底——否则窗口拉大后
-    /// clip view 旧滚动原点残留，内容被推下去形成大空白（真机实证 230pt）。
-    func test_hotkeyPane_documentView_pinnedTopAndCanFillViewport() {
+    /// 回归：滚动文档必须以 0 常量钉 clip view（NSClipView 自动管理滚动约束，
+    /// 手动非零常量会被冲突打破——真机实证 28pt 边距被吃掉、内容贴死分割条），
+    /// 视觉边距（28pt）由内层内容容器承担（与通用/贴图 pane 同一布局模式）。
+    func test_hotkeyPane_documentView_zeroPinnedAndInnerPadding() {
         let window = makeSettingsWindow()
         window.contentView?.layoutSubtreeIfNeeded()
 
@@ -216,20 +217,26 @@ final class HotkeySettingsLogicTests: XCTestCase {
             for sub in view.subviews { collect(sub) }
         }
         collect(pane)
-        // 钉顶：间距 ≤ 20
-        let topConstraints = allConstraints.filter {
-            $0.firstItem === doc && $0.firstAttribute == .top
-                && $0.secondItem === scroll.contentView && $0.relation == .equal
+        // 文档视图四向钉 clip view 的常量必须全为 0（leading/top/widing/bottom≥）
+        let docEdgeConstraints = allConstraints.filter { $0.firstItem === doc && $0.secondItem === scroll.contentView }
+        XCTAssertGreaterThanOrEqual(docEdgeConstraints.count, 3, "文档应钉 clip view 至少三向")
+        for c in docEdgeConstraints {
+            XCTAssertEqual(c.constant, 0, "文档钉 clip view 的常量必须为 0（非零会与滚动约束冲突被打破）")
         }
-        XCTAssertFalse(topConstraints.isEmpty, "文档应钉滚动区顶部")
-        XCTAssertLessThanOrEqual(topConstraints.map(\.constant).min() ?? 999, 20,
-                                 "顶部间距不得过大（此前真机空白 230pt 的回归网）")
-        // 底边 ≥：窗口拉大时文档撑满视口，消除旧滚动原点残留
-        let fillConstraints = allConstraints.filter {
-            $0.firstItem === doc && $0.firstAttribute == .bottom
-                && $0.secondItem === scroll.contentView && $0.relation == .greaterThanOrEqual
+        // 视觉边距由内层内容容器承担：内层栈 leading == 文档 leading + 28、top ≥ 16
+        let inner = doc.subviews.first
+        XCTAssertNotNil(inner, "文档内应有内容容器")
+        let innerLeading = allConstraints.filter {
+            $0.firstItem === inner && $0.firstAttribute == .leading
+                && $0.secondItem === doc && $0.relation == .equal
         }
-        XCTAssertFalse(fillConstraints.isEmpty, "文档底边必须 ≥ 视口底（窗口拉大后消除顶部空白）")
+        XCTAssertEqual(innerLeading.map(\.constant).min(), 28, "内容容器应距文档左缘 28pt（与其他 pane 一致）")
+        let innerTop = allConstraints.filter {
+            $0.firstItem === inner && $0.firstAttribute == .top
+                && $0.secondItem === doc && $0.relation == .equal
+        }
+        XCTAssertLessThanOrEqual(innerTop.map(\.constant).min() ?? 999, 20,
+                                 "内容容器顶部间距不得过大（此前真机空白 230pt 的回归网）")
     }
 
     private func findScrollView(in view: NSView) -> NSScrollView? {

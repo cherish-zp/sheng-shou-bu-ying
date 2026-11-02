@@ -129,10 +129,16 @@ final class HotkeySettingsPaneView: NSView {
         scroll.borderType = .noBorder
         UITheme.darkScroll(scroll)
         addSubview(scroll)
-        scroll.documentView = content
         scrollArea = scroll
-        // 玻璃改由窗口级一层提供（SettingsWindow.applyDark 注入 contentView 底层），
-        // pane 保持透明让窗口玻璃透出；不再在 pane 内重复注入（避免多层玻璃叠加）
+
+        // NSClipView 自动管理 documentView 的边缘约束（滚动=改这些约束常量），
+        // 手动给非零常量会与其冲突被打破——真机实证 28pt 边距被吃、内容贴死分割条。
+        // 因此文档视图 0 常量钉 clip view，视觉边距由内层 padding 容器承担
+        // （与通用/贴图 pane 的 28pt 布局模式一致）。
+        let padding = NSView()
+        padding.translatesAutoresizingMaskIntoConstraints = false
+        padding.addSubview(content)
+        scroll.documentView = padding
 
         NSLayoutConstraint.activate([
             scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -140,13 +146,18 @@ final class HotkeySettingsPaneView: NSView {
             scroll.topAnchor.constraint(equalTo: topAnchor),
             scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
 
-            // macOS 滚动文档布局：钉顶/宽到剪裁视图；底边 ≥ 视口底——
-            // 窗口拉大后文档撑满视口，旧滚动原点失效为 0（否则空白残留在顶部）
-            content.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor, constant: 28),
-            content.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor, constant: -56),
-            content.topAnchor.constraint(equalTo: scroll.contentView.topAnchor, constant: 20),
-            content.bottomAnchor.constraint(greaterThanOrEqualTo: scroll.contentView.bottomAnchor,
-                                            constant: 16),
+            // 文档 0 常量钉 clip view：leading/top/宽 + 底边 ≥（拉大窗口撑满视口，
+            // 旧滚动原点残留时被 layout() 夹持归零）
+            padding.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
+            padding.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
+            padding.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+            padding.bottomAnchor.constraint(greaterThanOrEqualTo: scroll.contentView.bottomAnchor),
+
+            // 内层 28pt 视觉边距（右侧同 28 对称）
+            content.leadingAnchor.constraint(equalTo: padding.leadingAnchor, constant: 28),
+            content.trailingAnchor.constraint(equalTo: padding.trailingAnchor, constant: -28),
+            content.topAnchor.constraint(equalTo: padding.topAnchor, constant: 20),
+            content.bottomAnchor.constraint(equalTo: padding.bottomAnchor, constant: -16),
         ])
     }
 
