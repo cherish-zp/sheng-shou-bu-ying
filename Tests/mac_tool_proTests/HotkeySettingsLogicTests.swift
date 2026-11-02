@@ -167,4 +167,76 @@ final class HotkeySettingsLogicTests: XCTestCase {
         XCTAssertEqual(bindingButtons.count, 13, "应有 13 个功能组合键按钮")
         XCTAssertEqual(clearButtons.count, 13, "应有 13 个 × 清除按钮")
     }
+
+    /// 回归：功能组合键按钮构造后必须带当前绑定文案（此前 bindingButtons 字典
+    /// 未填充、refreshLabel 全部 no-op，13 个按钮 title 恒空——真机上只见空按钮）。
+    func test_functionBindingButtons_showCurrentBindingLabels() {
+        let window = makeSettingsWindow()
+        window.contentView?.layoutSubtreeIfNeeded()
+
+        guard let pane = window.contentView?.subviews.compactMap({ $0 as? NSSplitView }).first?.arrangedSubviews[2],
+              pane is HotkeySettingsPaneView else {
+            return XCTFail("未找到快捷键面板")
+        }
+        let prefs = HotkeyPreferences.load()
+        var checked = 0
+        func walk(_ view: NSView) {
+            if let button = view as? NSButton, let id = button.identifier?.rawValue,
+               HotkeyPreferences.catalog.contains(where: { $0.id == id }) {
+                let expected = prefs.displayLabel(for: id) ?? "无"
+                XCTAssertEqual(button.title, expected,
+                               "\(id) 按钮应显示当前绑定「\(expected)」，不得为空")
+                checked += 1
+            }
+            for sub in view.subviews { walk(sub) }
+        }
+        walk(pane)
+        XCTAssertEqual(checked, 13, "应校验全部 13 个按钮")
+    }
+
+    /// 回归：滚动文档必须钉顶（间距小）且底边 ≥ 视口底——否则窗口拉大后
+    /// clip view 旧滚动原点残留，内容被推下去形成大空白（真机实证 230pt）。
+    func test_hotkeyPane_documentView_pinnedTopAndCanFillViewport() {
+        let window = makeSettingsWindow()
+        window.contentView?.layoutSubtreeIfNeeded()
+
+        guard let pane = window.contentView?.subviews.compactMap({ $0 as? NSSplitView }).first?.arrangedSubviews[2] else {
+            return XCTFail("未找到快捷键面板")
+        }
+        guard let scroll = findScrollView(in: pane) else {
+            return XCTFail("快捷键面板应有内容滚动区")
+        }
+        guard let doc = scroll.documentView else {
+            return XCTFail("滚动区应有文档视图")
+        }
+        // 跨视图约束由公共祖先持有（此处为 scroll.contentView），递归收集全部约束再过滤
+        var allConstraints: [NSLayoutConstraint] = []
+        func collect(_ view: NSView) {
+            allConstraints.append(contentsOf: view.constraints)
+            for sub in view.subviews { collect(sub) }
+        }
+        collect(pane)
+        // 钉顶：间距 ≤ 20
+        let topConstraints = allConstraints.filter {
+            $0.firstItem === doc && $0.firstAttribute == .top
+                && $0.secondItem === scroll.contentView && $0.relation == .equal
+        }
+        XCTAssertFalse(topConstraints.isEmpty, "文档应钉滚动区顶部")
+        XCTAssertLessThanOrEqual(topConstraints.map(\.constant).min() ?? 999, 20,
+                                 "顶部间距不得过大（此前真机空白 230pt 的回归网）")
+        // 底边 ≥：窗口拉大时文档撑满视口，消除旧滚动原点残留
+        let fillConstraints = allConstraints.filter {
+            $0.firstItem === doc && $0.firstAttribute == .bottom
+                && $0.secondItem === scroll.contentView && $0.relation == .greaterThanOrEqual
+        }
+        XCTAssertFalse(fillConstraints.isEmpty, "文档底边必须 ≥ 视口底（窗口拉大后消除顶部空白）")
+    }
+
+    private func findScrollView(in view: NSView) -> NSScrollView? {
+        if let scroll = view as? NSScrollView { return scroll }
+        for sub in view.subviews {
+            if let found = findScrollView(in: sub) { return found }
+        }
+        return nil
+    }
 }

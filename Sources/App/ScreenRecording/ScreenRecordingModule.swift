@@ -1,9 +1,9 @@
 import AppKit
 import CoreGraphics
 
-/// 录屏模块：F4 呼出 → 覆盖层选区（拖拽框选/点选窗口/Return 全屏）→ 红框 + 控制条
+/// 录屏模块：⌥R 呼出（可在设置改）→ 覆盖层选区（拖拽框选/点选窗口/Return 全屏）→ 红框 + 控制条
 /// → 录制（RecordingEngine）→ 停止 → AVPlayer 预览 → 保存/复制/关闭。
-/// 状态由 RecordingStateMachine 管理；F4 按键表见 RecordingKeyAction：
+/// 状态由 RecordingStateMachine 管理；会话内按键表见 RecordingKeyAction：
 /// idle=呼出 / selecting|armed=取消选区 / recording|paused=停止 / stopped=不干预。
 final class ScreenRecordingModule: NSObject, AppModule {
 

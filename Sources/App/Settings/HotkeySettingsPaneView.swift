@@ -19,9 +19,12 @@ final class HotkeySettingsPaneView: NSView {
 
     private var modifierControl: NSSegmentedControl!
     private var summonButton: NSButton!
+    /// 功能 id → 组合键按钮（refreshLabel/录制态经此更新；漏存会导致按钮文案恒空）
     private var bindingButtons: [String: NSButton] = [:]
     private var conflictLabel: NSTextField!
     private var failureLabel: NSTextField!
+    /// 内容滚动区：窗口拉大后夹持滚动原点（防止旧原点残留把内容推下去形成顶部空白）
+    private var scrollArea: NSScrollView?
 
     init() {
         prefs = HotkeyPreferences.load()
@@ -127,6 +130,7 @@ final class HotkeySettingsPaneView: NSView {
         UITheme.darkScroll(scroll)
         addSubview(scroll)
         scroll.documentView = content
+        scrollArea = scroll
         // 玻璃改由窗口级一层提供（SettingsWindow.applyDark 注入 contentView 底层），
         // pane 保持透明让窗口玻璃透出；不再在 pane 内重复注入（避免多层玻璃叠加）
 
@@ -136,12 +140,29 @@ final class HotkeySettingsPaneView: NSView {
             scroll.topAnchor.constraint(equalTo: topAnchor),
             scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
 
-            // macOS 滚动文档布局：钉顶/宽到剪裁视图，底边不钉——
-            // 内容高度由固有尺寸决定，超出可视高度即纵向滚动
+            // macOS 滚动文档布局：钉顶/宽到剪裁视图；底边 ≥ 视口底——
+            // 窗口拉大后文档撑满视口，旧滚动原点失效为 0（否则空白残留在顶部）
             content.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor, constant: 28),
             content.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor, constant: -56),
             content.topAnchor.constraint(equalTo: scroll.contentView.topAnchor, constant: 20),
+            content.bottomAnchor.constraint(greaterThanOrEqualTo: scroll.contentView.bottomAnchor,
+                                            constant: 16),
         ])
+    }
+
+    /// 窗口/面板尺寸变化时夹持滚动原点：文档变矮（拉大窗口）后旧原点会超界，
+    /// AppKit 不会自动回落——残留原点把内容推下去（真机顶部空白 230pt 的根因）。
+    override func layout() {
+        super.layout()
+        guard let scroll = scrollArea, let doc = scroll.documentView else { return }
+        let viewportHeight = scroll.contentView.bounds.height
+        let maxOriginY = max(0, doc.bounds.height - viewportHeight)
+        var origin = scroll.contentView.bounds.origin
+        let clampedY = min(max(0, origin.y), maxOriginY)
+        guard clampedY != origin.y else { return }
+        origin.y = clampedY
+        scroll.contentView.scroll(to: origin)
+        scroll.reflectScrolledClipView(scroll.contentView)
     }
 
     private func makeFunctionRow(_ entry: (id: String, title: String, keyCode: UInt32)) -> NSView {
@@ -168,6 +189,7 @@ final class HotkeySettingsPaneView: NSView {
         bindingButton.bezelStyle = .rounded
         bindingButton.identifier = NSUserInterfaceItemIdentifier(entry.id)
         bindingButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 64).isActive = true
+        bindingButtons[entry.id] = bindingButton
 
         let clearButton = NSButton(title: "×", target: self, action: #selector(clearClicked(_:)))
         clearButton.isBordered = false

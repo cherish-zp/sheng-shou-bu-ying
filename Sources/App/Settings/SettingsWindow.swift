@@ -441,7 +441,7 @@ final class RecordingSettingsPaneView: NSView {
         titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
         titleLabel.textColor = UITheme.textPrimary
 
-        let hintLabel = NSTextField(labelWithString: "F4 呼出录屏；更改立即生效于下一次录制。")
+        let hintLabel = NSTextField(labelWithString: "\(HotkeyPreferences.load().displayLabel(for: "screen-recording") ?? "⌥R") 呼出录屏；更改立即生效于下一次录制。")
         hintLabel.font = .systemFont(ofSize: 12)
         hintLabel.textColor = UITheme.textSecondary
 
