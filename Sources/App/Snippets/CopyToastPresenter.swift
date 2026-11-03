@@ -45,12 +45,19 @@ final class CopyToastPresenter: NSObject {
     }
 
     private func dismiss(_ toastPanel: NSPanel) {
+        // 记录发起时的代数：动画 completion 不可取消，期间若又 show()（generation++，
+        // 面板被复用）则本次 completion 必须放行新展示，不得误杀。
+        let gen = generation
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = spec.fadeOutDuration
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             toastPanel.animator().alphaValue = 0
         }, completionHandler: { [weak self] in
-            guard let self = self, self.panel === toastPanel, toastPanel.alphaValue == 0 else { return }
+            guard let self = self, self.panel === toastPanel, self.generation == gen else { return }
+            // 无条件落盘：不得读 alphaValue 做守卫——macOS 26 上动画可能被系统跳过，
+            // alpha 保持 1 导致 orderOut 永不执行、toast 永久残留（真机实证：屏上
+            // 堆积十几个 alpha=1 面板）。
+            toastPanel.alphaValue = 0
             toastPanel.orderOut(nil)
         })
     }
@@ -109,8 +116,10 @@ final class CopyToastPresenter: NSObject {
     }
 
     private func position(_ toastPanel: NSPanel) {
-        guard let screen = NSScreen.main else { return }
-        let visible = screen.visibleFrame
+        // 鼠标所在屏（用户视线处）：NSScreen.main 取「含 key 窗口的屏」，
+        // 取色器会话临时切 accessory 时可能漂到别的屏（真机实证 toast 堆到负坐标屏）。
+        let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+        guard let visible = screen?.visibleFrame else { return }
         let origin = NSPoint(
             x: visible.midX - toastPanel.frame.width / 2,
             y: visible.maxY - toastPanel.frame.height - CopyToastSpec.topGap

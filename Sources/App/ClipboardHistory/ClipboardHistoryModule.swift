@@ -161,10 +161,13 @@ final class ClipboardHistoryModule: NSObject {
         frontmostAppAtShow = NSWorkspace.shared.frontmostApplication
         if window == nil { buildWindow() }
         guard let panel = window else { return }
-        NSApp.activate(ignoringOtherApps: true)
         positionAtBottom(panel)
         panel.makeKeyAndOrderFront(nil)
         reload()
+        // 注意：不得在此 NSApp.activate——与前台 app 发生激活竞争，系统稍后把
+        // 前台还给原 app 时本 app 失活，面板 didResignKey 闪关（真机日志实证：
+        // 呼出 1 秒后序号热键全部注销）。nonactivatingPanel 无需激活即可成为 key，
+        // 用户点击面板时系统自行激活本 app。
     }
 
     /// 隐藏面板：orderOut + 注销全部序号热键。
