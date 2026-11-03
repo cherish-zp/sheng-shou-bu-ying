@@ -320,10 +320,10 @@ final class TransientHudToast {
         return panel
     }
 
-    /// 定位到主屏可见区顶部居中。
+    /// 定位到鼠标所在屏可见区顶部居中（NSScreen.main 在取色/贴图会话可能漂到别的屏）。
     private static func position(_ panel: NSPanel) {
-        guard let screen = NSScreen.main else { return }
-        let visible = screen.visibleFrame
+        let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+        guard let visible = screen?.visibleFrame else { return }
         let origin = NSPoint(
             x: visible.midX - panel.frame.width / 2,
             y: visible.maxY - panel.frame.height - Spec.topGap
@@ -338,7 +338,9 @@ final class TransientHudToast {
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().alphaValue = 0
         }, completionHandler: {
-            guard panel.alphaValue == 0 else { return }
+            // 无条件落盘：不得读 alphaValue 做守卫——macOS 26 上动画可能被系统跳过，
+            // alpha 保持 1 导致 orderOut 永不执行、toast 永久残留（真机实证）。
+            panel.alphaValue = 0
             panel.orderOut(nil)
             if currentPanel === panel { currentPanel = nil }
         })

@@ -25,6 +25,7 @@ final class ColorPickerSession: NSObject {
     private var overlayWindows: [ColorPickerOverlayWindow] = []
     private var magnifierWindow: ColorMagnifierWindow?
     private var escMonitor: Any?
+    private var escGlobalMonitor: Any?
 
     /// 每屏捕获图（惰性填充）：key = displayID。只留 CGImage，不预解码整屏 RGBA。
     private struct ScreenBuffer {
@@ -87,6 +88,10 @@ final class ColorPickerSession: NSObject {
             NSEvent.removeMonitor(escMonitor)
             self.escMonitor = nil
         }
+        if let escGlobalMonitor = escGlobalMonitor {
+            NSEvent.removeMonitor(escGlobalMonitor)
+            self.escGlobalMonitor = nil
+        }
         magnifierWindow?.orderOut(nil)
         magnifierWindow = nil
         for window in overlayWindows { window.orderOut(nil) }
@@ -112,7 +117,8 @@ final class ColorPickerSession: NSObject {
                                hexText: sample.hex, rgbText: sample.rgb)
     }
 
-    /// 单击取色：复制 #RRGGBB 到剪贴板 + Toast + 记录历史；取色器保持打开可连续取色。
+    /// 单击取色：复制 #RRGGBB 到剪贴板 + Toast + 记录历史，随后自动退出取色模式
+    /// （覆盖层退出不影响 toast——其为独立悬浮窗，完整播放淡入淡出）。
     private func pickColor() {
         let location = NSEvent.mouseLocation
         guard let sample = sampleColor(at: location) else {
@@ -123,6 +129,11 @@ final class ColorPickerSession: NSObject {
         history.record(sample.hex)
         TransientHudToast.show(text: "已复制 \(sample.hex) · \(sample.rgb)")
         DiagLog.write("ColorPickerSession: picked \(sample.hex) \(sample.rgb), history=\(history.entries)")
+        // 取色完成即退出模式（用户定案：单击取色后不驻留连续取色）；
+        // 短延迟让点击反馈先落定，stop 幂等可重入。
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            self?.stop()
+        }
     }
 
     /// 取样结果：放大镜网格颜色 + 光标色 + 文本。
@@ -205,15 +216,23 @@ final class ColorPickerSession: NSObject {
         }
     }
 
-    /// ESC 本地监听兜底：无论 first responder 在谁，ESC 一律退出取色器。
+    /// ESC 双监听：local 收本 app 按键（覆盖层为 key 时视图 keyDown 已处理，此为第二道）；
+    /// global 兜底「激活竞争后本 app 失去前台」——此时 local monitor 收不到任何事件，
+    /// 用户按 ESC 完全失效、覆盖层退不出去（真机实证），global 在其他 app 前台时触发。
     private func installEscMonitor() {
         escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == ColorPickerSession.escKeyCode {
-                DiagLog.write("ColorPickerSession: ESC pressed, exiting")
+                DiagLog.write("ColorPickerSession: ESC pressed (local), exiting")
                 self?.stop()
                 return nil
             }
             return event
+        }
+        escGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == ColorPickerSession.escKeyCode {
+                DiagLog.write("ColorPickerSession: ESC pressed (global), exiting")
+                self?.stop()
+            }
         }
     }
 }
