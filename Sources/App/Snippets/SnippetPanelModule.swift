@@ -29,9 +29,28 @@ final class SnippetPanelModule: NSObject {
     func showPanel() {
         if panel == nil { buildWindow() }
         guard let panel else { return }
-        positionPanel(panel)
-        panel.makeKeyAndOrderFront(nil)
+        // 清空残留搜索词：面板复用（isReleasedWhenClosed=false），残留会让每次
+        // 呼出只见上次匹配的条目（用户报告「只剩一个」的根因）
+        searchField?.stringValue = ""
         reload()
+        applyPanelSize(panel)
+        panel.makeKeyAndOrderFront(nil)
+        reload()   // 宽度变化后重排卡片
+    }
+
+    /// 面板宽度随条目数自适应（HotkeyPanelContent.snippetPanelWidth），高度恒定。
+    private func applyPanelSize(_ panel: NSPanel) {
+        let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+        guard let visible = screen?.visibleFrame else { return }
+        let width = HotkeyPanelContent.snippetPanelWidth(itemCount: SnippetManager.shared.snippets.count,
+                                                         screenWidth: visible.width)
+        let size = NSSize(width: width, height: 280)
+        let origin = NSPoint(x: visible.midX - width / 2,
+                             y: visible.maxY - size.height - 60)
+        panel.setFrame(NSRect(origin: origin, size: size), display: false)
+        if let content = panel.contentView {
+            content.frame = NSRect(origin: .zero, size: size)
+        }
     }
 
     private func hidePanel() {
@@ -177,11 +196,9 @@ final class SnippetPanelModule: NSObject {
     // MARK: - 刷新
 
     private func reload() {
-        let query = searchField?.stringValue ?? ""
-        let all = SnippetManager.shared.snippets
-        displayed = query.isEmpty
-            ? all.sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
-            : SnippetManager.shared.search(query: query)
+        displayed = HotkeyPanelContent.displayed(
+            snippets: SnippetManager.shared.snippets,
+            query: searchField?.stringValue ?? "")
         rebuildCards()
         emptyLabel?.isHidden = !displayed.isEmpty
     }

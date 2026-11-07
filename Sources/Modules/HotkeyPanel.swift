@@ -120,6 +120,32 @@ public enum HotkeyPanelContent {
         HotkeyPreferences.catalog.filter { prefs.bindings[$0.id] == nil }
     }
 
+    /// 快速片段面板宽度随片段数自适应：卡片 200pt + 间距 12 + 两侧 24，
+    /// 下限 420（空态观感），上限屏宽-48（溢出横向滚动）。
+    public static func snippetPanelWidth(itemCount: Int, screenWidth: CGFloat) -> CGFloat {
+        let content = CGFloat(max(itemCount - 1, 0)) * 12 + CGFloat(itemCount) * 200 + 48
+        return min(max(420, content), screenWidth - 48)
+    }
+
+    /// 快速片段面板显示序（纯逻辑，TDD）：空 query = 全量；非空 = key/内容
+    /// 大小写不敏感过滤；统一按 key 字典序。
+    /// 背景：面板复用不重置搜索框，残留搜索词导致用户每次呼出只见匹配条目
+    /// （「只剩一个」报告）——显示序收口此函数 + showPanel 清空搜索词双保险。
+    public static func displayed(snippets: [Snippet], query: String) -> [Snippet] {
+        let filtered: [Snippet]
+        if query.trimmingCharacters(in: .whitespaces).isEmpty {
+            filtered = snippets
+        } else {
+            let q = query.lowercased()
+            filtered = snippets.filter {
+                $0.key.lowercased().contains(q) || $0.content.lowercased().contains(q)
+            }
+        }
+        return filtered.sorted {
+            $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending
+        }
+    }
+
 
     /// 单个键帽内容。
     public enum Cell: Equatable {

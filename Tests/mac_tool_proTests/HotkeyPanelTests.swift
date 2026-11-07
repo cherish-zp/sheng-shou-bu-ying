@@ -227,3 +227,49 @@ extension HotkeyPanelTests {
         XCTAssertFalse(HotkeyPanelContent.bindableFunctions(prefs: prefs).contains { $0.id == "screenshot" })
     }
 }
+
+// MARK: - 快速片段面板显示序（用户报告「只剩一个」回归网）
+
+extension HotkeyPanelTests {
+
+    private func makeSnippets(_ keys: [String]) -> [Snippet] {
+        keys.map { Snippet(key: $0, content: "内容-\($0)") }
+    }
+
+    /// 空 query：全量按 key 排序（不得只剩部分条目）。
+    func test_displayed_emptyQueryShowsAll() {
+        let all = makeSnippets(["ftp下载", "车联网", "nacos密码", "FTP解压密码"])
+        let displayed = HotkeyPanelContent.displayed(snippets: all, query: "")
+        XCTAssertEqual(displayed.count, 4, "空搜索必须显示全部片段")
+    }
+
+    /// 非空 query：只显示匹配项（面板残留搜索词时用户看到的就是这个）。
+    func test_displayed_queryFilters() {
+        let all = makeSnippets(["ftp下载", "车联网", "nacos密码", "FTP解压密码"])
+        let displayed = HotkeyPanelContent.displayed(snippets: all, query: "ftp")
+        XCTAssertEqual(displayed.count, 2, "大小写不敏感匹配 ftp/FTP")
+    }
+
+    /// 排序稳定性：key 字典序（与匹配无关）。
+    func test_displayed_sortedByKey() {
+        let all = makeSnippets(["c片", "a片", "b片"])
+        let displayed = HotkeyPanelContent.displayed(snippets: all, query: "")
+        XCTAssertEqual(displayed.map(\.key), ["a片", "b片", "c片"])
+    }
+}
+
+extension HotkeyPanelTests {
+
+    /// 面板宽度随片段数自适应：少量片段收在空态宽 420，多了 clamp 到屏宽-48。
+    func test_snippetPanelWidth_adapts() {
+        XCTAssertEqual(HotkeyPanelContent.snippetPanelWidth(itemCount: 0, screenWidth: 1728), 420, accuracy: 0.1)
+        // 2 条内容宽 460 > 下限 420 → 内容宽
+        XCTAssertEqual(HotkeyPanelContent.snippetPanelWidth(itemCount: 2, screenWidth: 1728), 460, accuracy: 0.1)
+        // 5 张卡：24+5×200+4×12+24 = 1108 > 420 → 内容宽
+        XCTAssertEqual(HotkeyPanelContent.snippetPanelWidth(itemCount: 5, screenWidth: 1728),
+                       5 * 200 + 4 * 12 + 48, accuracy: 0.1)
+        // 20 张超屏：clamp 到屏宽-48
+        XCTAssertEqual(HotkeyPanelContent.snippetPanelWidth(itemCount: 20, screenWidth: 1728),
+                       1728 - 48, accuracy: 0.1)
+    }
+}
