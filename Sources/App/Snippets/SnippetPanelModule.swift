@@ -11,7 +11,11 @@ final class SnippetPanelModule: NSObject {
     private var cardScroll: HorizontalScrollScrollView?
     private var searchField: NSSearchField?
     private var emptyLabel: NSTextField?
-    private var editorSheet: NSPanel?
+    /// 编辑浮层：普通 key 窗口（旧 nonactivatingPanel 永远无法成为 key，
+    /// 鼠标/键盘事件路由不可靠——真机实证取消按钮/Esc 全部失效）。
+    private var editorSheet: NSWindow?
+    /// 编辑态：浮层抢 key 时主面板失焦属预期，抑制失焦自动关闭。
+    private var isShowingEditor = false
     /// 编辑目标：nil = 新增。
     private var editingSnippetID: UUID?
     private var isDismissing = false
@@ -214,9 +218,9 @@ final class SnippetPanelModule: NSObject {
     private func openEditor(for snippet: Snippet? = nil) {
         closeEditor()
         editingSnippetID = snippet?.id
-        let sheet = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 460, height: 210),
-                            styleMask: [.titled, .nonactivatingPanel],
-                            backing: .buffered, defer: false)
+        let sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 210),
+                             styleMask: [.titled, .closable],
+                             backing: .buffered, defer: false)
         sheet.title = snippet == nil ? "新增片段" : "编辑片段"
         sheet.isReleasedWhenClosed = false
         sheet.center()
@@ -265,12 +269,14 @@ final class SnippetPanelModule: NSObject {
             buttons.trailingAnchor.constraint(equalTo: sheet.contentView!.trailingAnchor, constant: -20),
         ])
         editorSheet = sheet
+        isShowingEditor = true
         sheet.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         keyField.becomeFirstResponder()
     }
 
     @objc private func saveClicked() {
+        DiagLog.write("SnippetPanel: save clicked")
         guard let sheet = editorSheet else { return }
         // sheet contentView 里的两个输入框按顺序取
         let fields = sheet.contentView?.subviews.compactMap { $0 as? NSStackView }.first?.arrangedSubviews
@@ -290,26 +296,42 @@ final class SnippetPanelModule: NSObject {
         reload()
     }
 
-    @objc private func cancelEditorClicked() { closeEditor() }
+    @objc private func cancelEditorClicked() {
+        DiagLog.write("SnippetPanel: cancel clicked")
+        closeEditor()
+    }
 
     private func closeEditor() {
         editorSheet?.orderOut(nil)
         editorSheet = nil
         editingSnippetID = nil
+        isShowingEditor = false
+        // 焦点回归主面板（编辑浮层是 key 窗口，关闭后把 key 还给主面板）
+        if let panel, panel.isVisible {
+            panel.makeKeyAndOrderFront(nil)
+        }
     }
 
     // MARK: - 关闭路径与监听
 
     private func installDismissHandlers() {
         escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, self.panel?.isVisible == true, event.keyCode == 53 else { return event }
-            self.hidePanel()
-            return nil
+            guard let self, event.keyCode == 53 else { return event }
+            switch SnippetPanelGate.escAction(hasEditor: self.isShowingEditor) {
+            case .closeEditor:
+                self.closeEditor()
+                return nil
+            case .hidePanel:
+                guard self.panel?.isVisible == true else { return event }
+                self.hidePanel()
+                return nil
+            }
         }
         resignObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didResignKeyNotification, object: panel, queue: .main
         ) { [weak self] _ in
             guard let self, !self.isDismissing else { return }
+            guard SnippetPanelGate.resignShouldHidePanel(hasEditor: self.isShowingEditor) else { return }
             self.hidePanel()
         }
     }

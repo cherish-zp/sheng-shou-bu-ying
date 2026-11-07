@@ -173,3 +173,20 @@ public enum HotkeyPanelContent {
         return .empty(keyLabel: String(key))
     }
 }
+
+/// 快速片段面板编辑态交互裁决（纯逻辑，TDD）。
+public enum SnippetPanelGate {
+    public enum EscAction: Equatable {
+        case closeEditor   // 编辑浮层开着：Esc 只取消编辑
+        case hidePanel     // 无浮层：Esc 关闭主面板
+    }
+
+    public static func escAction(hasEditor: Bool) -> EscAction {
+        hasEditor ? .closeEditor : .hidePanel
+    }
+
+    /// 主面板失焦时是否应自动关闭（编辑浮层抢 key 期间不关）。
+    public static func resignShouldHidePanel(hasEditor: Bool) -> Bool {
+        !hasEditor
+    }
+}
