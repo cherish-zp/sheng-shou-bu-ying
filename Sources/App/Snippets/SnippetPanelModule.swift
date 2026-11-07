@@ -38,18 +38,19 @@ final class SnippetPanelModule: NSObject {
         reload()   // 宽度变化后重排卡片
     }
 
-    /// 面板宽度随条目数自适应（HotkeyPanelContent.snippetPanelWidth），高度恒定。
+    /// 面板宽随条目自适应（上限铺满），高随网格行数自适应（key 按钮多行换行）。
     private func applyPanelSize(_ panel: NSPanel) {
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         guard let visible = screen?.visibleFrame else { return }
-        let width = HotkeyPanelContent.snippetPanelWidth(itemCount: SnippetManager.shared.snippets.count,
-                                                         screenWidth: visible.width)
-        let size = NSSize(width: width, height: 280)
+        let count = SnippetManager.shared.snippets.count
+        let width = HotkeyPanelContent.snippetPanelWidth(itemCount: count, screenWidth: visible.width)
+        let height = HotkeyPanelContent.snippetPanelHeight(itemCount: count, screenWidth: visible.width)
         let origin = NSPoint(x: visible.midX - width / 2,
-                             y: visible.maxY - size.height - 60)
-        panel.setFrame(NSRect(origin: origin, size: size), display: false)
+                             y: visible.maxY - height - 60)
+        panel.setFrame(NSRect(origin: origin, size: NSSize(width: width, height: height)),
+                       display: false)
         if let content = panel.contentView {
-            content.frame = NSRect(origin: .zero, size: size)
+            content.frame = NSRect(origin: .zero, size: NSSize(width: width, height: height))
         }
     }
 
@@ -144,33 +145,22 @@ final class SnippetPanelModule: NSObject {
     }
 
     private func buildCardFlow(in content: NSView) {
-        let scroll = HorizontalScrollScrollView()
-        scroll.hasHorizontalScroller = true
-        scroll.autohidesScrollers = true
-        scroll.drawsBackground = false
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-
-        let stack = NSStackView()
-        stack.orientation = .horizontal
-        stack.alignment = .top
-        stack.spacing = 12
-        stack.edgeInsets = NSEdgeInsets(top: 0, left: 6, bottom: 0, right: 6)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        scroll.documentView = stack
-
-        content.addSubview(scroll)
+        // key 按钮网格：竖向 stack 装「行」，每行横向 stack 装按钮（多行换行，
+        // 不滚动——面板高随行数自适应，一眼看全）
+        let grid = NSStackView()
+        grid.orientation = .vertical
+        grid.alignment = .leading
+        grid.spacing = TransferShelfLayoutSpec.itemSpacing
+        grid.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(grid)
         NSLayoutConstraint.activate([
-            scroll.topAnchor.constraint(equalTo: content.topAnchor, constant: 40),
-            scroll.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 10),
-            scroll.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -10),
-            scroll.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -12),
-            stack.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
-            stack.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
-            stack.bottomAnchor.constraint(equalTo: scroll.contentView.bottomAnchor),
-            stack.widthAnchor.constraint(greaterThanOrEqualTo: scroll.contentView.widthAnchor),
+            grid.topAnchor.constraint(equalTo: content.topAnchor, constant: 40),
+            grid.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor, constant: -12),
+            grid.centerXAnchor.constraint(equalTo: content.centerXAnchor),
+            grid.leadingAnchor.constraint(greaterThanOrEqualTo: content.leadingAnchor, constant: 24),
+            grid.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -24),
         ])
-        cardStack = stack
-        cardScroll = scroll
+        cardStack = grid
 
         let empty = NSTextField(labelWithString: "暂无片段 · 点右上「＋」新增")
         empty.font = .systemFont(ofSize: 12)
@@ -204,24 +194,30 @@ final class SnippetPanelModule: NSObject {
     }
 
     private func rebuildCards() {
-        guard let stack = cardStack else { return }
-        stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        for snippet in displayed {
-            let card = SnippetCardView(snippet: snippet)
-            card.onCopy = { [weak self] in self?.copySnippet(snippet) }
-            card.onDelete = { [weak self] in
-                SnippetManager.shared.delete(id: snippet.id)
-            }
-            card.onEdit = { [weak self] in self?.openEditor(for: snippet) }
-            // 先入列再激活约束：与 stack 的约束在 addArrangedSubview 之前激活，
-            // 会与 NSStackView 内部约束互斥 abort（中转站/快捷键 pane 同款前科）
-            stack.addArrangedSubview(card)
-            NSLayoutConstraint.activate([
-                card.widthAnchor.constraint(equalToConstant: 200),
-                card.topAnchor.constraint(equalTo: stack.topAnchor),
-                card.bottomAnchor.constraint(equalTo: stack.bottomAnchor),
-            ])
+        guard let grid = cardStack else { return }
+        grid.arrangedSubviews.forEach { $0.removeFromSuperview() }
+
+        let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+        let perRow = HotkeyPanelContent.snippetGridPerRow(screenWidth: screen?.frame.width ?? 1512)
+        var index = 0
+        while index < displayed.count {
+            let rowEnd = min(index + perRow, displayed.count)
+            let rowItems = displayed[index..<rowEnd]
+            index = rowEnd
+            let row = NSStackView(views: rowItems.map { makeSnippetButton(for: $0) })
+            row.orientation = .horizontal
+            row.spacing = TransferShelfLayoutSpec.itemSpacing
+            grid.addArrangedSubview(row)
         }
+    }
+
+    /// 组装 key 按钮（点击复制、tooltip 看 value、hover 删除、双击/右键编辑）。
+    private func makeSnippetButton(for snippet: Snippet) -> SnippetButtonView {
+        let button = SnippetButtonView(snippet: snippet)
+        button.onCopy = { [weak self] in self?.copySnippet(snippet) }
+        button.onDelete = { SnippetManager.shared.delete(id: snippet.id) }
+        button.onEdit = { [weak self] in self?.openEditor(for: snippet) }
+        return button
     }
 
     private func copySnippet(_ snippet: Snippet) {
@@ -383,8 +379,9 @@ private typealias ClipboardPanelWindowLike = ClipboardPanelWindow
 
 // MARK: - 片段卡片
 
-/// 单个片段卡片：key 名 + 内容预览 + hover 删除，点击复制。
-final class SnippetCardView: NSView {
+/// key 按钮（紧凑键帽）：只显示 key——点击即复制；value 不占版面，
+/// 走 tooltip 查看 + 双击/右键编辑 + hover 右上 × 删除（用户定案）。
+final class SnippetButtonView: NSView {
 
     var onCopy: (() -> Void)?
     var onDelete: (() -> Void)?
@@ -398,26 +395,19 @@ final class SnippetCardView: NSView {
         self.snippet = snippet
         super.init(frame: .zero)
         wantsLayer = true
-        UITheme.styleCard(self)
+        UITheme.styleCard(self, tint: UITheme.accent)
         layer?.cornerRadius = 10
 
         let keyLabel = NSTextField(labelWithString: snippet.key)
-        keyLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        keyLabel.font = .systemFont(ofSize: 12, weight: .medium)
         keyLabel.textColor = UITheme.textPrimary
         keyLabel.lineBreakMode = .byTruncatingTail
         keyLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(keyLabel)
 
-        let preview = snippet.content
-            .replacingOccurrences(of: "\n", with: " ⏎ ")
-        let contentLabel = NSTextField(labelWithString: preview)
-        contentLabel.font = .systemFont(ofSize: 10)
-        contentLabel.textColor = UITheme.textSecondary
-        contentLabel.maximumNumberOfLines = 3
-        contentLabel.lineBreakMode = .byCharWrapping
-        contentLabel.cell?.wraps = true
-        contentLabel.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(contentLabel)
+        // value 不上版面：tooltip 承载完整内容
+        toolTip = snippet.content
+        keyLabel.toolTip = snippet.content
 
         removeButton.bezelStyle = .texturedRounded
         removeButton.isBordered = false
@@ -434,16 +424,13 @@ final class SnippetCardView: NSView {
         addSubview(removeButton)
 
         NSLayoutConstraint.activate([
-            keyLabel.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            widthAnchor.constraint(equalToConstant: HotkeyPanelContent.snippetButtonSize.width),
+            heightAnchor.constraint(equalToConstant: HotkeyPanelContent.snippetButtonSize.height),
+            keyLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
             keyLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             keyLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -10),
-
-            contentLabel.topAnchor.constraint(equalTo: keyLabel.bottomAnchor, constant: 5),
-            contentLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            contentLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
-
-            removeButton.topAnchor.constraint(equalTo: topAnchor, constant: 6),
-            removeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            removeButton.topAnchor.constraint(equalTo: topAnchor, constant: 2),
+            removeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -2),
         ])
 
         addTrackingArea(NSTrackingArea(rect: .zero,

@@ -273,3 +273,36 @@ extension HotkeyPanelTests {
                        1728 - 48, accuracy: 0.1)
     }
 }
+
+// MARK: - 快速片段 key 按钮网格（用户定案：多行换行、面板高随行数）
+
+extension HotkeyPanelTests {
+
+    /// 每行容量：1512 屏可用 1512-48=1464；(1464+8)/(140+8)=9.97 → 9。
+    func test_snippetGrid_perRowCapacity() {
+        XCTAssertEqual(HotkeyPanelContent.snippetGridPerRow(screenWidth: 1512), 9)
+        XCTAssertEqual(HotkeyPanelContent.snippetGridPerRow(screenWidth: 500), 3,
+                       "500-48=452；(452+8)/148=3.1 → 3")
+        XCTAssertEqual(HotkeyPanelContent.snippetGridPerRow(screenWidth: 200), 1, "极窄保底 1")
+    }
+
+    func test_snippetGrid_rows() {
+        let w = CGFloat(1512)
+        XCTAssertEqual(HotkeyPanelContent.snippetGridRows(itemCount: 0, screenWidth: w), 0)
+        XCTAssertEqual(HotkeyPanelContent.snippetGridRows(itemCount: 9, screenWidth: w), 1)
+        XCTAssertEqual(HotkeyPanelContent.snippetGridRows(itemCount: 10, screenWidth: w), 2,
+                       "10 张换第二行")
+        XCTAssertEqual(HotkeyPanelContent.snippetGridRows(itemCount: 20, screenWidth: w), 3)
+    }
+
+    /// 面板高 = 顶栏 40 + 行数×44 + 行距×(rows-1) + 底 padding 12；空态 = 顶栏+空态文案带。
+    func test_snippetPanelHeight_byRows() {
+        let w = CGFloat(1512)
+        XCTAssertEqual(HotkeyPanelContent.snippetPanelHeight(itemCount: 0, screenWidth: w),
+                       40 + 40 + 12, accuracy: 0.1, "空态：顶栏 + 引导文案带 + padding")
+        XCTAssertEqual(HotkeyPanelContent.snippetPanelHeight(itemCount: 9, screenWidth: w),
+                       40 + 44 + 12, accuracy: 0.1)
+        XCTAssertEqual(HotkeyPanelContent.snippetPanelHeight(itemCount: 10, screenWidth: w),
+                       40 + 44 * 2 + 8 + 12, accuracy: 0.1)
+    }
+}

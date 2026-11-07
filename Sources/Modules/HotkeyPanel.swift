@@ -127,6 +127,34 @@ public enum HotkeyPanelContent {
         return min(max(420, content), screenWidth - 48)
     }
 
+    // MARK: - 快速片段 key 按钮网格（用户定案：多行换行、面板高随行数自适应）
+
+    /// key 按钮（只显 key、点击即复制，value 走 tooltip/编辑浮层）。
+    public static let snippetButtonSize = NSSize(width: 140, height: 44)
+    /// 网格行间距。
+    public static let snippetRowSpacing: CGFloat = 8
+
+    /// 每行按钮容量：可用宽 = 屏宽 - 2×24 侧边距。
+    public static func snippetGridPerRow(screenWidth: CGFloat) -> Int {
+        let usable = screenWidth - 48
+        let perRow = Int((usable + 8) / (snippetButtonSize.width + 8))
+        return max(1, perRow)
+    }
+
+    /// 行数（换行布局）。
+    public static func snippetGridRows(itemCount: Int, screenWidth: CGFloat) -> Int {
+        guard itemCount > 0 else { return 0 }
+        return Int(ceil(Double(itemCount) / Double(snippetGridPerRow(screenWidth: screenWidth))))
+    }
+
+    /// 面板高度 = 顶栏 40 + 行数×按钮高 + 行距 + 底 padding 12；空态 = 顶栏 + 引导文案 40 + 12。
+    public static func snippetPanelHeight(itemCount: Int, screenWidth: CGFloat) -> CGFloat {
+        let rows = snippetGridRows(itemCount: itemCount, screenWidth: screenWidth)
+        guard rows > 0 else { return 40 + 40 + 12 }
+        return 40 + CGFloat(rows) * snippetButtonSize.height
+            + CGFloat(rows - 1) * snippetRowSpacing + 12
+    }
+
     /// 快速片段面板显示序（纯逻辑，TDD）：空 query = 全量；非空 = key/内容
     /// 大小写不敏感过滤；统一按 key 字典序。
     /// 背景：面板复用不重置搜索框，残留搜索词导致用户每次呼出只见匹配条目
