@@ -148,16 +148,14 @@ final class TransferShelfPanelController: NSObject {
         let frameSize = NSSize(width: size.width, height: height)
         let defaults = UserDefaults.standard
         let saved = TransferShelfManualPosition.savedOrigin(in: defaults)
-        let origin = TransferShelfManualPosition.clampedOrigin(
-            saved ?? NSPoint(x: visible.midX - frameSize.width / 2,
-                             y: visible.maxY - frameSize.height - TransferShelfLayoutSpec.topGap),
-            visibleFrame: visible,
-            panelSize: frameSize
+        let origin = TransferShelfManualPosition.resolvedOrigin(
+            saved: saved, visibleFrame: visible, panelSize: frameSize
         )
         panel.setFrame(NSRect(origin: origin, size: frameSize), display: true)
         if let shelfView = shelfView {
             shelfView.frame = NSRect(x: 0, y: 0, width: frameSize.width, height: frameSize.height)
         }
+        // 保存裁决后的值（而非原始记忆）：坏记忆（跨屏悬空坐标）在第一次呼出即被清洗
         TransferShelfManualPosition.save(origin: origin, in: defaults)
     }
 

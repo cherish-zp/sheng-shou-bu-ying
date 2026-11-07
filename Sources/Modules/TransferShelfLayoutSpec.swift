@@ -15,7 +15,7 @@ public enum TransferShelfLayoutSpec {
     public static let hotZoneWidth: CGFloat = 320
     public static let hotZoneHeight: CGFloat = 18
     /// 空态面板宽度：面板初始 frame 与 preferredPanelSize 空态分支共用，避免魔法数分叉。
-    public static let emptyPanelWidth: CGFloat = 210
+    public static let emptyPanelWidth: CGFloat = 420
     /// 判断点是否位于指定屏幕可见区域顶部中央的热区内。
     public static func isInHotZone(location: NSPoint, visibleFrame: NSRect) -> Bool {
         let rect = NSRect(
@@ -30,10 +30,10 @@ public enum TransferShelfLayoutSpec {
 
     /// 面板发丝描边宽度与条目圆角（苹果风细节）。
     public static let panelHairlineWidth: CGFloat = 1
-    public static let itemCornerRadius: CGFloat = 12
+    public static let itemCornerRadius: CGFloat = 10
 
-    /// 大图标竖排卡：图标边长（居中上部）。
-    public static let itemIconSize: CGFloat = 52
+    /// 紧凑行卡图标：面板高度锁定空态 88pt，卡片区 42pt。
+    public static let itemIconSize: CGFloat = 20
 
     /// 条目右上角删除按钮（hover 显示）。
     public static let itemClearButtonSize: CGFloat = 14
@@ -50,8 +50,9 @@ public enum TransferShelfLayoutSpec {
     /// UI ④ 热区拖拽提示胶囊尺寸。
     public static let hotHintSize = NSSize(width: 118, height: 28)
 
-    /// 大图标竖排卡尺寸：图标上部居中 + 名称 + 副标题（数据横向摆放，对标剪贴板卡片流）。
-    public static let cardSize = NSSize(width: 124, height: 116)
+    /// 紧凑行卡尺寸：图标左 + 名称/副标题右两行，高 42 恰入 88 高面板；
+    /// 数据横向摆放，溢出横向滚动。
+    public static let cardSize = NSSize(width: 190, height: 42)
 
     /// 面板两侧距屏幕边缘的最小留白：面板拉长也不贴边。
     public static let screenSideMargin: CGFloat = 24
@@ -68,16 +69,15 @@ public enum TransferShelfLayoutSpec {
         return max(emptyPanelWidth, width)
     }
 
-    /// 面板尺寸（单行横向流）：高度恒定（header + 单行卡 + padding），
-    /// 宽度 = 内容总宽 clamp 到 [空态宽, 屏宽 - 2×侧边距]——溢出横向滚动（滚轮纵转横）。
+    /// 面板尺寸：高度**永远等于空态高 88**（用户定案：加文件不改高度），
+    /// 宽度 = 内容总宽 clamp 到 [空态宽, 屏宽 - 2×侧边距]——溢出横向滚动。
     public static func panelSize(itemCount: Int, screenWidth: CGFloat) -> CGSize {
         if itemCount <= 0 {
             return CGSize(width: emptyPanelWidth, height: emptyPanelHeight)
         }
         let maxWidth = screenWidth - screenSideMargin * 2
         let width = min(contentWidth(itemCount: itemCount), maxWidth)
-        let height = headerHeight + contentTopGap + cardSize.height + panelPadding
-        return CGSize(width: width, height: height)
+        return CGSize(width: width, height: emptyPanelHeight)
     }
 
 

@@ -107,4 +107,20 @@ public enum TransferShelfManualPosition {
             y: min(max(origin.y, visibleFrame.minY), maxY)
         )
     }
+
+    /// 记忆位置裁决：记忆点代表的**整块面板**必须完全落在当前鼠标屏可见区内，
+    /// 否则放弃记忆、回到该屏顶部中央。
+    /// 背景：分量独立 clamp 会造出「x 属于 A 屏、y 属于 B 屏」的悬空坐标
+    /// （真机实证 (2478,22)：x 在右屏区间、y 在主屏区间，面板不可见，且坏值
+    /// 每次呼出被回存永久驻留）。
+    public static func resolvedOrigin(saved: NSPoint?, visibleFrame: NSRect, panelSize: NSSize) -> NSPoint {
+        let topCenter = NSPoint(
+            x: visibleFrame.midX - panelSize.width / 2,
+            y: visibleFrame.maxY - panelSize.height - TransferShelfLayoutSpec.topGap
+        )
+        if let saved, visibleFrame.contains(NSRect(origin: saved, size: panelSize)) {
+            return clampedOrigin(saved, visibleFrame: visibleFrame, panelSize: panelSize)
+        }
+        return clampedOrigin(topCenter, visibleFrame: visibleFrame, panelSize: panelSize)
+    }
 }

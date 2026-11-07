@@ -174,4 +174,59 @@ final class TransferShelfManualPositionTests: XCTestCase {
         )
         XCTAssertEqual(origin, NSPoint(x: 0, y: 0), "面板比屏大时按屏原点兜底(max/min 混合收敛)")
     }
+
+    // MARK: - resolvedOrigin（记忆点整体合法性：防跨屏悬空坐标）
+
+    /// 真机实证：坏记忆 (2478, 22)——x 落在右屏区间、y 落在主屏区间，分量独立
+    /// clamp 造出「不属于任何屏」的悬空坐标，面板不可见且坏值每次呼出被回存驻留。
+    /// resolvedOrigin 语义：记忆点代表的整块面板必须完全落在当前鼠标屏可见区内，
+    /// 否则放弃记忆回到顶部中央。
+    func test_resolvedOrigin_validMemoryKept() {
+        let frame = NSRect(x: 0, y: 0, width: 1728, height: 1084)
+        let origin = TransferShelfManualPosition.resolvedOrigin(
+            saved: NSPoint(x: 600, y: 900), visibleFrame: frame,
+            panelSize: NSSize(width: 420, height: 88))
+        XCTAssertEqual(origin, NSPoint(x: 600, y: 900), "合法记忆原样保留")
+    }
+
+    func test_resolvedOrigin_crossScreenGapFallsBackToTopCenter() {
+        let mainVisible = NSRect(x: 0, y: 0, width: 1728, height: 1084)
+        let origin = TransferShelfManualPosition.resolvedOrigin(
+            saved: NSPoint(x: 2478, y: 22), visibleFrame: mainVisible,
+            panelSize: NSSize(width: 420, height: 88))
+        XCTAssertEqual(origin.x, (1728 - 420) / 2, accuracy: 0.1,
+                       "记忆整体越界 → 顶部中央 x")
+        XCTAssertEqual(origin.y, 1084 - 88 - TransferShelfLayoutSpec.topGap, accuracy: 0.1,
+                       "顶部中央 y")
+    }
+
+    func test_resolvedOrigin_partialOverflowFallsBack() {
+        // x 合法但 y 越界（面板下半探出屏外）也整块判非法 → 顶部中央
+        let frame = NSRect(x: 0, y: 0, width: 1728, height: 1084)
+        let origin = TransferShelfManualPosition.resolvedOrigin(
+            saved: NSPoint(x: 600, y: -30), visibleFrame: frame,
+            panelSize: NSSize(width: 420, height: 88))
+        XCTAssertEqual(origin.x, (1728 - 420) / 2, accuracy: 0.1)
+    }
+
+    func test_resolvedOrigin_nilMemoryGoesTopCenter() {
+        let frame = NSRect(x: 0, y: 0, width: 1728, height: 1084)
+        let origin = TransferShelfManualPosition.resolvedOrigin(
+            saved: nil, visibleFrame: frame, panelSize: NSSize(width: 420, height: 88))
+        XCTAssertEqual(origin.x, (1728 - 420) / 2, accuracy: 0.1)
+        XCTAssertEqual(origin.y, 1084 - 88 - TransferShelfLayoutSpec.topGap, accuracy: 0.1)
+    }
+
+    func test_resolvedOrigin_nonZeroOriginScreen() {
+        // 外接屏（非零原点）：合法记忆保留、越界回落到该屏顶部中央
+        let extVisible = NSRect(x: 1728, y: 114, width: 1920, height: 1003)
+        let ok = TransferShelfManualPosition.resolvedOrigin(
+            saved: NSPoint(x: 2478, y: 990), visibleFrame: extVisible,
+            panelSize: NSSize(width: 420, height: 88))
+        XCTAssertEqual(ok, NSPoint(x: 2478, y: 990), "外接屏内合法记忆保留")
+        let bad = TransferShelfManualPosition.resolvedOrigin(
+            saved: NSPoint(x: 100, y: 22), visibleFrame: extVisible,
+            panelSize: NSSize(width: 420, height: 88))
+        XCTAssertEqual(bad.x, 1728 + (1920 - 420) / 2, accuracy: 0.1, "越界回落外接屏顶部中央")
+    }
 }

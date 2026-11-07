@@ -14,13 +14,14 @@ final class TransferShelfLayoutSpecTests: XCTestCase {
         XCTAssertEqual(TransferShelfLayoutSpec.cornerRadius, 20, accuracy: 0.1)
     }
 
+    /// 空态宽 ×2（用户定案）：空态更大方，有文件后高度不变只在宽度上变长。
     func test_emptyPanelWidth() {
-        XCTAssertEqual(TransferShelfLayoutSpec.emptyPanelWidth, 210, accuracy: 0.1)
+        XCTAssertEqual(TransferShelfLayoutSpec.emptyPanelWidth, 420, accuracy: 0.1)
     }
 
-    /// 大图标竖排卡：图标居中上部 + 名称 + 副标题。
+    /// 紧凑行卡图标：面板高度锁定空态 88pt，卡片区仅 42pt——图标回归左侧 20pt。
     func test_itemIconSize() {
-        XCTAssertEqual(TransferShelfLayoutSpec.itemIconSize, 52, accuracy: 0.1)
+        XCTAssertEqual(TransferShelfLayoutSpec.itemIconSize, 20, accuracy: 0.1)
     }
 
     func test_fadeDurations() {
@@ -95,17 +96,16 @@ final class TransferShelfLayoutSpecTests: XCTestCase {
         XCTAssertEqual(TransferShelfLayoutSpec.panelHairlineWidth, 1, accuracy: 0.1)
     }
 
-    // MARK: - 大图标竖排卡
+    // MARK: - 紧凑行卡（横向一排）
 
     func test_cardSizeIsPortraitTile() {
-        XCTAssertEqual(TransferShelfLayoutSpec.cardSize.width, 124, accuracy: 0.1)
-        XCTAssertEqual(TransferShelfLayoutSpec.cardSize.height, 116, accuracy: 0.1,
-                       "竖排卡：大图标上部居中 + 名称 + 副标题，数据横向摆放")
+        XCTAssertEqual(TransferShelfLayoutSpec.cardSize.width, 190, accuracy: 0.1)
+        XCTAssertEqual(TransferShelfLayoutSpec.cardSize.height, 42, accuracy: 0.1,
+                       "高度锁定空态 88：header 26 + gap 8 + 卡 42 + padding 12")
     }
 
     func test_itemCornerRadius() {
-        XCTAssertEqual(TransferShelfLayoutSpec.itemCornerRadius, 12, accuracy: 0.1,
-                       "大卡圆角相应放大")
+        XCTAssertEqual(TransferShelfLayoutSpec.itemCornerRadius, 10, accuracy: 0.1)
     }
 
     func test_itemClearButtonSize() {
@@ -116,9 +116,9 @@ final class TransferShelfLayoutSpecTests: XCTestCase {
 
     /// 内容总宽：N 张卡 + 卡间距 + 两侧 padding；不足空态宽时抬到空态宽。
     func test_contentWidth() {
+        // 1 张卡（190+24=214）不足空态宽 420 → 抬到 420
         XCTAssertEqual(TransferShelfLayoutSpec.contentWidth(itemCount: 1),
-                       TransferShelfLayoutSpec.emptyPanelWidth, accuracy: 0.1,
-                       "1 张卡不足空态宽，抬到空态宽")
+                       TransferShelfLayoutSpec.emptyPanelWidth, accuracy: 0.1)
         let expected3 = 2 * TransferShelfLayoutSpec.panelPadding
             + 3 * TransferShelfLayoutSpec.cardSize.width
             + 2 * TransferShelfLayoutSpec.itemSpacing
@@ -131,18 +131,20 @@ final class TransferShelfLayoutSpecTests: XCTestCase {
         XCTAssertEqual(size.height, TransferShelfLayoutSpec.emptyPanelHeight, accuracy: 0.1)
     }
 
-    /// 高度恒定：无论多少条目都是单行（溢出靠横向滚动，不再换行拉高）。
-    func test_panelSize_heightIsConstantSingleRow() {
-        let expectedH = TransferShelfLayoutSpec.headerHeight
-            + TransferShelfLayoutSpec.contentTopGap
-            + TransferShelfLayoutSpec.cardSize.height
-            + TransferShelfLayoutSpec.panelPadding
+    /// 高度恒定 = 空态高 88（用户定案）：加了文件高度不变，只在宽度上变长。
+    func test_panelSize_heightEqualsEmptyStateAlways() {
         XCTAssertEqual(TransferShelfLayoutSpec.panelSize(itemCount: 1, screenWidth: 1512).height,
-                       expectedH, accuracy: 0.1)
+                       TransferShelfLayoutSpec.emptyPanelHeight, accuracy: 0.1)
         XCTAssertEqual(TransferShelfLayoutSpec.panelSize(itemCount: 9, screenWidth: 1512).height,
-                       expectedH, accuracy: 0.1, "20 条也不换行——单行横向流")
+                       TransferShelfLayoutSpec.emptyPanelHeight, accuracy: 0.1)
         XCTAssertEqual(TransferShelfLayoutSpec.panelSize(itemCount: 20, screenWidth: 1512).height,
-                       expectedH, accuracy: 0.1)
+                       TransferShelfLayoutSpec.emptyPanelHeight, accuracy: 0.1,
+                       "20 条也不变高——溢出横向滚动")
+    }
+
+    /// 空态高度也是 88：空态与有文件状态同高（用户强调空态好看、高度不变）。
+    func test_emptyPanelHeightLocked() {
+        XCTAssertEqual(TransferShelfLayoutSpec.emptyPanelHeight, 88, accuracy: 0.1)
     }
 
     /// 宽度：内容宽 clamp 到 [空态宽, 屏宽 - 2×侧边距]；超出部分横向滚动。

@@ -104,26 +104,27 @@ final class TransferShelfItemView: NSView {
         removeButton.translatesAutoresizingMaskIntoConstraints = false
         addSubview(removeButton)
 
-        // 竖排卡布局：大图标上部居中，名称/副标题底部两行，删除按钮右上悬浮
+        // 行卡布局（88 高面板的 42pt 卡）：图标垂直居中在左，名称/副标题两行居右，
+        // 删除按钮右端垂直居中（hover 显示）。
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.cardSize.width),
             heightAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.cardSize.height),
 
-            iconView.topAnchor.constraint(equalTo: topAnchor, constant: 14),
-            iconView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
             iconView.widthAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.itemIconSize),
             iconView.heightAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.itemIconSize),
 
-            nameLabel.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: 8),
-            nameLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
-            nameLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            nameLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 8),
+            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: removeButton.leadingAnchor, constant: -4),
+            nameLabel.bottomAnchor.constraint(equalTo: centerYAnchor, constant: -2),
 
-            subtitleLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 3),
-            subtitleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
-            subtitleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            subtitleLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
+            subtitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: removeButton.leadingAnchor, constant: -4),
+            subtitleLabel.topAnchor.constraint(equalTo: centerYAnchor, constant: 2),
 
-            removeButton.topAnchor.constraint(equalTo: topAnchor, constant: 5),
-            removeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -5),
+            removeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            removeButton.centerYAnchor.constraint(equalTo: centerYAnchor),
             removeButton.widthAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.itemClearButtonSize),
             removeButton.heightAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.itemClearButtonSize),
         ])
