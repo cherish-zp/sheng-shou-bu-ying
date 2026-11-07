@@ -201,3 +201,29 @@ final class HotkeyPanelTests: XCTestCase {
                        "键位字符大小写不敏感")
     }
 }
+
+// MARK: - 绑定菜单可选功能（用户定案：未绑键位只列完全未绑定的功能）
+
+extension HotkeyPanelTests {
+
+    func test_bindableFunctions_defaultPrefsIsEmpty() {
+        // 默认 13 个功能全部有键位 → 未绑键位的菜单不应列出任何功能
+        XCTAssertTrue(HotkeyPanelContent.bindableFunctions(prefs: .withDefaults()).isEmpty)
+    }
+
+    func test_bindableFunctions_listsOnlyUnbound() {
+        var prefs = HotkeyPreferences.withDefaults()
+        prefs.bindings["screenshot"] = nil          // 清空截图绑定
+        prefs.bindings["translate"] = nil
+        let bindable = HotkeyPanelContent.bindableFunctions(prefs: prefs)
+        XCTAssertEqual(bindable.map(\.id).sorted(), ["screenshot", "translate"],
+                       "只列出完全没有键位的功能")
+    }
+
+    func test_bindableFunctions_rebindingSameKeyDoesNotReappear() {
+        // 功能绑在别的键位上也不得出现在未绑键菜单（换键走右键「更换绑定」）
+        var prefs = HotkeyPreferences.withDefaults()
+        prefs.bindings["screenshot"] = HotkeyBinding(keyCode: 99)   // 挪到别的键
+        XCTAssertFalse(HotkeyPanelContent.bindableFunctions(prefs: prefs).contains { $0.id == "screenshot" })
+    }
+}

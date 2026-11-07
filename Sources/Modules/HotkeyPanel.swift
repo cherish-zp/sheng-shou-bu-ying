@@ -113,6 +113,14 @@ public extension AppLaunchBindingStore {
 /// 面板键位合并视图：功能绑定优先，其次应用绑定，未绑为空键位。
 public enum HotkeyPanelContent {
 
+    /// 未绑键位的绑定菜单可选功能：**只列出当前完全没有键位的功能**——
+    /// 已绑定的功能不得重复出现（换键走已绑键位右键「更换绑定」）。
+    public static func bindableFunctions(prefs: HotkeyPreferences)
+        -> [(id: String, title: String, keyCode: UInt32)] {
+        HotkeyPreferences.catalog.filter { prefs.bindings[$0.id] == nil }
+    }
+
+
     /// 单个键帽内容。
     public enum Cell: Equatable {
         /// 已绑功能：功能 id + 展示名 + SF Symbol 名。

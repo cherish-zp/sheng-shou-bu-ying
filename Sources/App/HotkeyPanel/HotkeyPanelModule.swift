@@ -350,7 +350,7 @@ final class HotkeyPanelModule: NSObject {
         let functionTitle = NSMenuItem(title: "绑定功能", action: nil, keyEquivalent: "")
         functionTitle.isEnabled = false
         menu.addItem(functionTitle)
-        for entry in HotkeyPreferences.catalog where prefs.bindings[entry.id]?.keyCode != keyCode {
+        for entry in HotkeyPanelContent.bindableFunctions(prefs: prefs) {
             let item = NSMenuItem(title: entry.title, action: #selector(bindingMenuClicked(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = "func:\(entry.id):\(keyChar)"
