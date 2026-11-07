@@ -20,6 +20,7 @@ final class TransferShelfItemView: NSView {
     private let iconView = NSImageView()
     private let nameLabel = NSTextField(labelWithString: "")
     /// 副标题：file=大小+时间、text=字数、image=像素尺寸、link=相对时间。
+    private let subtitleLabel = NSTextField(labelWithString: "")
     private let removeButton = NSButton()
     // 单击 vs 拖出判定与「本次按住已开拖拽会话」标记;后者同时避免
     // 连续 mouseDragged 重复开启多个拖拽会话。
@@ -56,12 +57,14 @@ final class TransferShelfItemView: NSView {
         self.item = item
         super.init(frame: NSRect(origin: .zero, size: TransferShelfLayoutSpec.cardSize))
 
+        // 竖排大图标卡（融流光玻璃）：cardBackground 半透明底 + hairline 描边，
+        // 去旧版 categoryColor 彩色描边（大面积白卡在流光上突兀的根因之一）。
         iconView.image = Self.icon(for: item)
         iconView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(iconView)
 
         nameLabel.stringValue = item.name
-        nameLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        nameLabel.font = .systemFont(ofSize: 11, weight: .medium)
         nameLabel.textColor = UITheme.textPrimary
         nameLabel.maximumNumberOfLines = 1
         nameLabel.lineBreakMode = .byTruncatingMiddle
@@ -70,12 +73,20 @@ final class TransferShelfItemView: NSView {
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(nameLabel)
 
+        subtitleLabel.stringValue = Self.subtitle(for: item)
+        subtitleLabel.font = .systemFont(ofSize: 9)
+        subtitleLabel.textColor = UITheme.textSecondary
+        subtitleLabel.maximumNumberOfLines = 1
+        subtitleLabel.lineBreakMode = .byTruncatingTail
+        subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(subtitleLabel)
+
         toolTip = "\(item.name)\n\(Self.subtitle(for: item))"
 
         wantsLayer = true
         layer?.cornerRadius = TransferShelfLayoutSpec.itemCornerRadius
         layer?.backgroundColor = Self.normalBackground.cgColor
-        layer?.borderColor = UITheme.categoryColor(for: item.kind.rawValue).withAlphaComponent(0.55).cgColor
+        layer?.borderColor = UITheme.hairline.cgColor
 
         removeButton.bezelStyle = .texturedRounded
         removeButton.isBordered = false
@@ -89,25 +100,30 @@ final class TransferShelfItemView: NSView {
         removeButton.toolTip = "删除"
         removeButton.target = self
         removeButton.action = #selector(removeSelf)
+        removeButton.isHidden = true   // hover 显示
         removeButton.translatesAutoresizingMaskIntoConstraints = false
         addSubview(removeButton)
 
-        // 行卡布局（Apple 列表语言）：图标垂直居中在左，名称单行居中，删除按钮右端
+        // 竖排卡布局：大图标上部居中，名称/副标题底部两行，删除按钮右上悬浮
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.cardSize.width),
             heightAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.cardSize.height),
 
-            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconView.topAnchor.constraint(equalTo: topAnchor, constant: 14),
+            iconView.centerXAnchor.constraint(equalTo: centerXAnchor),
             iconView.widthAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.itemIconSize),
             iconView.heightAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.itemIconSize),
 
-            nameLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 8),
-            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: removeButton.leadingAnchor, constant: -4),
-            nameLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            nameLabel.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: 8),
+            nameLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            nameLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
 
-            removeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
-            removeButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            subtitleLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 3),
+            subtitleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            subtitleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+
+            removeButton.topAnchor.constraint(equalTo: topAnchor, constant: 5),
+            removeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -5),
             removeButton.widthAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.itemClearButtonSize),
             removeButton.heightAnchor.constraint(equalToConstant: TransferShelfLayoutSpec.itemClearButtonSize),
         ])
@@ -119,12 +135,14 @@ final class TransferShelfItemView: NSView {
             userInfo: nil
         ))
 
-        // file 条目大小后台回填（初始副标题先显示时间）
+        // file 条目大小后台回填（副标题从时间占位更新为真实大小）
         if item.kind == .file {
             Self.loadFileSize(for: item) { [weak self] size in
                 guard let self, let size else { return }
                 let time = TransferItemRelativeTime.string(from: item.addedAt, now: Date())
-                self.toolTip = "\(item.name)\n\(TransferItemFileSize.string(bytes: size)) · \(time)"
+                let text = "\(TransferItemFileSize.string(bytes: size)) · \(time)"
+                subtitleLabel.stringValue = text
+                self.toolTip = "\(item.name)\n\(text)"
             }
         }
     }
@@ -213,12 +231,14 @@ final class TransferShelfItemView: NSView {
 
     override func mouseEntered(with event: NSEvent) {
         animateBackground(to: Self.hoverBackground)
+        removeButton.isHidden = false
         removeButton.contentTintColor = UITheme.textPrimary
         onHover?(item.id)
     }
 
     override func mouseExited(with event: NSEvent) {
         animateBackground(to: Self.normalBackground)
+        removeButton.isHidden = true
         removeButton.contentTintColor = .tertiaryLabelColor
         onHover?(nil)
     }

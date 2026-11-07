@@ -1,8 +1,10 @@
 import XCTest
 
-/// TDD: 文件中转站布局规格 - 顶部横向面板、条目尺寸、动画参数。
+/// TDD: 文件中转站布局规格 - 贴顶横向卡片流（对标剪贴板面板语言）：
+/// 大图标竖排卡、单行横向摆放、溢出横向滚动（滚轮纵转横）、面板高度恒定。
 final class TransferShelfLayoutSpecTests: XCTestCase {
 
+    // MARK: - 通用参数
 
     func test_itemSpacing() {
         XCTAssertEqual(TransferShelfLayoutSpec.itemSpacing, 10, accuracy: 0.1)
@@ -12,14 +14,13 @@ final class TransferShelfLayoutSpecTests: XCTestCase {
         XCTAssertEqual(TransferShelfLayoutSpec.cornerRadius, 20, accuracy: 0.1)
     }
 
-    /// 统一空态宽度魔法数：面板初始 frame 与 preferredPanelSize 空态分支都必须用它。
     func test_emptyPanelWidth() {
         XCTAssertEqual(TransferShelfLayoutSpec.emptyPanelWidth, 210, accuracy: 0.1)
     }
 
-    /// 条目图标尺寸常量（此前 24 内联两处）。
+    /// 大图标竖排卡：图标居中上部 + 名称 + 副标题。
     func test_itemIconSize() {
-        XCTAssertEqual(TransferShelfLayoutSpec.itemIconSize, 24, accuracy: 0.1)
+        XCTAssertEqual(TransferShelfLayoutSpec.itemIconSize, 52, accuracy: 0.1)
     }
 
     func test_fadeDurations() {
@@ -42,44 +43,34 @@ final class TransferShelfLayoutSpecTests: XCTestCase {
 
     func test_hotZoneHitTopCenter() {
         let frame = NSRect(x: 0, y: 0, width: 1000, height: 800)
-        let point = NSPoint(x: 500, y: 795)
-        XCTAssertTrue(TransferShelfLayoutSpec.isInHotZone(location: point, visibleFrame: frame))
+        XCTAssertTrue(TransferShelfLayoutSpec.isInHotZone(
+            location: NSPoint(x: 500, y: 795), visibleFrame: frame))
     }
 
     func test_hotZoneMissTopLeft() {
         let frame = NSRect(x: 0, y: 0, width: 1000, height: 800)
-        let point = NSPoint(x: 50, y: 795)
-        XCTAssertFalse(TransferShelfLayoutSpec.isInHotZone(location: point, visibleFrame: frame))
+        XCTAssertFalse(TransferShelfLayoutSpec.isInHotZone(
+            location: NSPoint(x: 50, y: 795), visibleFrame: frame))
     }
 
     func test_hotZoneMissMiddle() {
         let frame = NSRect(x: 0, y: 0, width: 1000, height: 800)
-        let point = NSPoint(x: 500, y: 400)
-        XCTAssertFalse(TransferShelfLayoutSpec.isInHotZone(location: point, visibleFrame: frame))
+        XCTAssertFalse(TransferShelfLayoutSpec.isInHotZone(
+            location: NSPoint(x: 500, y: 400), visibleFrame: frame))
     }
 
     func test_hotZoneHitRespectsVisibleFrameOrigin() {
         let frame = NSRect(x: 100, y: 50, width: 1000, height: 800)
-        let point = NSPoint(x: 600, y: 845)
-        XCTAssertTrue(TransferShelfLayoutSpec.isInHotZone(location: point, visibleFrame: frame))
+        XCTAssertTrue(TransferShelfLayoutSpec.isInHotZone(
+            location: NSPoint(x: 600, y: 845), visibleFrame: frame))
     }
 
     func test_dragImageFrameIsNonZero() {
         let frame = TransferShelfLayoutSpec.dragImageFrame
         XCTAssertGreaterThan(frame.width, 0)
         XCTAssertGreaterThan(frame.height, 0)
+        XCTAssertEqual(frame.width, frame.height, accuracy: 0.1)
     }
-
-
-
-
-
-    /// 毛玻璃规格：深色材质（对标浮引深色面板，替代旧 hudWindow 浅色材质）。
-    func test_panelMaterialIsDark() {
-        XCTAssertEqual(TransferShelfLayoutSpec.panelMaterial, .underPageBackground)
-    }
-
-    // MARK: - UI ③ 头部栏 / ④ 空态与动画 / ⑤ 宽度自适应
 
     func test_headerHeight() {
         XCTAssertEqual(TransferShelfLayoutSpec.headerHeight, 26, accuracy: 0.1)
@@ -100,57 +91,38 @@ final class TransferShelfLayoutSpecTests: XCTestCase {
         XCTAssertEqual(TransferShelfLayoutSpec.hotHintSize.height, 28, accuracy: 0.1)
     }
 
-    // MARK: - ⑤ 宽度自适应(clamp 200–260)
-
-
-
-
-
-
-
     func test_panelHairlineWidth() {
         XCTAssertEqual(TransferShelfLayoutSpec.panelHairlineWidth, 1, accuracy: 0.1)
     }
 
+    // MARK: - 大图标竖排卡
+
+    func test_cardSizeIsPortraitTile() {
+        XCTAssertEqual(TransferShelfLayoutSpec.cardSize.width, 124, accuracy: 0.1)
+        XCTAssertEqual(TransferShelfLayoutSpec.cardSize.height, 116, accuracy: 0.1,
+                       "竖排卡：大图标上部居中 + 名称 + 副标题，数据横向摆放")
+    }
+
     func test_itemCornerRadius() {
-        XCTAssertEqual(TransferShelfLayoutSpec.itemCornerRadius, 8, accuracy: 0.1,
-                       "行卡更小，圆角相应收敛")
+        XCTAssertEqual(TransferShelfLayoutSpec.itemCornerRadius, 12, accuracy: 0.1,
+                       "大卡圆角相应放大")
     }
 
     func test_itemClearButtonSize() {
-        XCTAssertEqual(TransferShelfLayoutSpec.itemClearButtonSize, 12, accuracy: 0.1)
+        XCTAssertEqual(TransferShelfLayoutSpec.itemClearButtonSize, 14, accuracy: 0.1)
     }
 
-    func test_itemClearButtonInsets() {
-        XCTAssertEqual(TransferShelfLayoutSpec.itemClearButtonOffset, 2, accuracy: 0.1)
-    }
+    // MARK: - 单行横向流（高度恒定、宽度 clamp、溢出滚动）
 
-    func test_dragImageFrameIsSquare() {
-        let frame = TransferShelfLayoutSpec.dragImageFrame
-        XCTAssertEqual(frame.width, frame.height, accuracy: 0.1)
-    }
-
-    // MARK: - 卡片横向流（换行、无滚动）
-
-    func test_cardSizeIsCompactRowCard() {
-        XCTAssertEqual(TransferShelfLayoutSpec.cardSize.width, 170, accuracy: 0.1)
-        XCTAssertEqual(TransferShelfLayoutSpec.cardSize.height, 44, accuracy: 0.1,
-                       "Apple 列表条目高度：紧凑行卡，图标文字一行读清")
-    }
-
-    func test_cardsPerRow_fitsWideScreen() {
-        // 1512 屏：可用 1512-48-24=1440；(1440+10)/94=15.4 → 15；条目仅 6 张 → 6
-        XCTAssertEqual(TransferShelfLayoutSpec.cardsPerRow(itemCount: 6, screenWidth: 1512), 6)
-    }
-
-    func test_cardsPerRow_wrapsOnNarrowScreen() {
-        // 500 屏：可用 428；(428+10)/180=2.4 → 2 张一行
-        XCTAssertEqual(TransferShelfLayoutSpec.cardsPerRow(itemCount: 9, screenWidth: 500), 2)
-    }
-
-    func test_cardsPerRow_atLeastOne() {
-        XCTAssertEqual(TransferShelfLayoutSpec.cardsPerRow(itemCount: 3, screenWidth: 120), 1,
-                       "极窄屏也必须保证一行至少 1 张")
+    /// 内容总宽：N 张卡 + 卡间距 + 两侧 padding；不足空态宽时抬到空态宽。
+    func test_contentWidth() {
+        XCTAssertEqual(TransferShelfLayoutSpec.contentWidth(itemCount: 1),
+                       TransferShelfLayoutSpec.emptyPanelWidth, accuracy: 0.1,
+                       "1 张卡不足空态宽，抬到空态宽")
+        let expected3 = 2 * TransferShelfLayoutSpec.panelPadding
+            + 3 * TransferShelfLayoutSpec.cardSize.width
+            + 2 * TransferShelfLayoutSpec.itemSpacing
+        XCTAssertEqual(TransferShelfLayoutSpec.contentWidth(itemCount: 3), expected3, accuracy: 0.1)
     }
 
     func test_panelSize_emptyUsesEmptyState() {
@@ -159,39 +131,35 @@ final class TransferShelfLayoutSpecTests: XCTestCase {
         XCTAssertEqual(size.height, TransferShelfLayoutSpec.emptyPanelHeight, accuracy: 0.1)
     }
 
-    func test_panelSize_singleItem() {
-        let size = TransferShelfLayoutSpec.panelSize(itemCount: 1, screenWidth: 1512)
-        // 单张卡片内容宽 84+24=108 < 空态宽 → 宽度抬到空态宽
-        XCTAssertEqual(size.width, TransferShelfLayoutSpec.emptyPanelWidth, accuracy: 0.1)
+    /// 高度恒定：无论多少条目都是单行（溢出靠横向滚动，不再换行拉高）。
+    func test_panelSize_heightIsConstantSingleRow() {
         let expectedH = TransferShelfLayoutSpec.headerHeight
             + TransferShelfLayoutSpec.contentTopGap
             + TransferShelfLayoutSpec.cardSize.height
             + TransferShelfLayoutSpec.panelPadding
-        XCTAssertEqual(size.height, expectedH, accuracy: 0.1)
+        XCTAssertEqual(TransferShelfLayoutSpec.panelSize(itemCount: 1, screenWidth: 1512).height,
+                       expectedH, accuracy: 0.1)
+        XCTAssertEqual(TransferShelfLayoutSpec.panelSize(itemCount: 9, screenWidth: 1512).height,
+                       expectedH, accuracy: 0.1, "20 条也不换行——单行横向流")
+        XCTAssertEqual(TransferShelfLayoutSpec.panelSize(itemCount: 20, screenWidth: 1512).height,
+                       expectedH, accuracy: 0.1)
     }
 
-    func test_panelSize_widthHugsColumns() {
+    /// 宽度：内容宽 clamp 到 [空态宽, 屏宽 - 2×侧边距]；超出部分横向滚动。
+    func test_panelSize_widthHugsContent() {
         let size = TransferShelfLayoutSpec.panelSize(itemCount: 3, screenWidth: 1512)
-        let expectedW = CGFloat(3 * 170 + 2 * 10) + 2 * TransferShelfLayoutSpec.panelPadding
-        XCTAssertEqual(size.width, expectedW, accuracy: 0.1, "宽度随列数拉长")
-    }
-
-    func test_panelSize_multiRowGrowsWithoutCap() {
-        // 500 宽屏 9 项 → 2 张一行 → 5 行；高度不封顶
-        let size = TransferShelfLayoutSpec.panelSize(itemCount: 9, screenWidth: 500)
-        let content = CGFloat(5 * 44 + 4 * 10)
-        let expectedH = TransferShelfLayoutSpec.headerHeight
-            + TransferShelfLayoutSpec.contentTopGap + content
-            + TransferShelfLayoutSpec.panelPadding
-        XCTAssertEqual(size.height, expectedH, accuracy: 0.1, "换行兜底，高度无上限")
+        XCTAssertEqual(size.width, TransferShelfLayoutSpec.contentWidth(itemCount: 3), accuracy: 0.1)
     }
 
     func test_panelSize_widthNeverExceedsScreenMargin() {
-        let size = TransferShelfLayoutSpec.panelSize(itemCount: 40, screenWidth: 800)
+        let size = TransferShelfLayoutSpec.panelSize(itemCount: 20, screenWidth: 800)
         XCTAssertLessThanOrEqual(
-            size.width,
-            800 - TransferShelfLayoutSpec.screenSideMargin * 2 + 0.1,
-            "面板再长也不越过屏幕两侧留白"
-        )
+            size.width, 800 - TransferShelfLayoutSpec.screenSideMargin * 2 + 0.1,
+            "面板再长也不越过屏幕两侧留白（溢出滚动）")
+    }
+
+    /// 滚轮纵转横：横向滚动视图必须可复用（与剪贴板面板同一共享类）。
+    func test_scrollWheelViewShared() {
+        XCTAssertTrue(HorizontalScrollScrollView().isKind(of: NSScrollView.self))
     }
 }

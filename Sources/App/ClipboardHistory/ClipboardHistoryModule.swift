@@ -693,23 +693,8 @@ final class ClipboardPanelWindow: NSPanel {
 
 // MARK: - 卡片流横向滚动视图（滚轮纵转横）
 
-/// 贴底横条没有纵向内容：纵向滚轮（|deltaY| > |deltaX|）转为横向浏览卡片流，
-/// 横向滚动照常透传 super。scroll(to:) 自带 documentView 边界夹持，滚到头自然停；
-/// 惯性沿用合成滚轮的 momentum 事件，不做额外动量。
-final class HorizontalScrollScrollView: NSScrollView {
-    override func scrollWheel(with event: NSEvent) {
-        // contentView 为非可选；无内容文档时透传 super 即可
-        guard abs(event.deltaY) > abs(event.deltaX), documentView != nil else {
-            super.scrollWheel(with: event)
-            return
-        }
-        // 向下滑 = 向右看内容：origin.x += deltaY（macOS delta 符号惯例，真机验证手感）
-        let clip = contentView
-        let origin = clip.bounds.origin
-        clip.scroll(to: NSPoint(x: origin.x + event.deltaY, y: origin.y))
-        reflectScrolledClipView(clip)
-    }
-}
+// HorizontalScrollScrollView 已提升为共享类（Sources/Modules/HorizontalScrollScrollView.swift），
+// 与文件中转站复用同一实现。
 
 // MARK: - 卡片视图
 

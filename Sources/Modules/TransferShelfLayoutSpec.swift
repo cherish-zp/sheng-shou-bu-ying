@@ -30,14 +30,13 @@ public enum TransferShelfLayoutSpec {
 
     /// 面板发丝描边宽度与条目圆角（苹果风细节）。
     public static let panelHairlineWidth: CGFloat = 1
-    public static let itemCornerRadius: CGFloat = 8
+    public static let itemCornerRadius: CGFloat = 12
 
-    /// 行卡图标边长（Apple 列表比例）。
-    public static let itemIconSize: CGFloat = 24
+    /// 大图标竖排卡：图标边长（居中上部）。
+    public static let itemIconSize: CGFloat = 52
 
-    /// 条目右上角单独删除按钮。
-    public static let itemClearButtonSize: CGFloat = 12
-    public static let itemClearButtonOffset: CGFloat = 2
+    /// 条目右上角删除按钮（hover 显示）。
+    public static let itemClearButtonSize: CGFloat = 14
 
     /// UI ③ 头部栏高度（标题 + 条目计数 + 清空按钮）。
     public static let headerHeight: CGFloat = 26
@@ -51,11 +50,8 @@ public enum TransferShelfLayoutSpec {
     /// UI ④ 热区拖拽提示胶囊尺寸。
     public static let hotHintSize = NSSize(width: 118, height: 28)
 
-    /// UI ① 毛玻璃材质（圆角裁剪由容器 layer 负责）。
-    public static let panelMaterial: NSVisualEffectView.Material = .underPageBackground
-
-    /// 行卡尺寸（图标左 + 名称右，Apple 列表条目语言：高 44、紧凑不滚动）。
-    public static let cardSize = NSSize(width: 170, height: 44)
+    /// 大图标竖排卡尺寸：图标上部居中 + 名称 + 副标题（数据横向摆放，对标剪贴板卡片流）。
+    public static let cardSize = NSSize(width: 124, height: 116)
 
     /// 面板两侧距屏幕边缘的最小留白：面板拉长也不贴边。
     public static let screenSideMargin: CGFloat = 24
@@ -63,27 +59,25 @@ public enum TransferShelfLayoutSpec {
     /// 头部栏与卡片区之间的纵向间距。
     public static let contentTopGap: CGFloat = 8
 
-    /// 屏幕可用宽度内一行最多容纳多少张卡片（至少 1；不超过条目数）。
-    public static func cardsPerRow(itemCount: Int, screenWidth: CGFloat) -> Int {
-        let usable = screenWidth - screenSideMargin * 2 - panelPadding * 2
-        let perRow = Int(floor((usable + itemSpacing) / (cardSize.width + itemSpacing)))
-        return max(1, min(perRow, max(1, itemCount)))
+    /// N 张卡的内容总宽（含两侧 padding）；不足空态宽时抬到空态宽。
+    public static func contentWidth(itemCount: Int) -> CGFloat {
+        guard itemCount > 0 else { return emptyPanelWidth }
+        let width = panelPadding * 2
+            + CGFloat(itemCount) * cardSize.width
+            + CGFloat(itemCount - 1) * itemSpacing
+        return max(emptyPanelWidth, width)
     }
 
-    /// 面板尺寸（卡片横向流）：宽 = 实际列数宽度（至少空态宽，天然不超屏），
-    /// 高 = 头部 + 行数 × 卡片（不设上限——内容放不下靠换行兜底，永不滚动）。
+    /// 面板尺寸（单行横向流）：高度恒定（header + 单行卡 + padding），
+    /// 宽度 = 内容总宽 clamp 到 [空态宽, 屏宽 - 2×侧边距]——溢出横向滚动（滚轮纵转横）。
     public static func panelSize(itemCount: Int, screenWidth: CGFloat) -> CGSize {
         if itemCount <= 0 {
             return CGSize(width: emptyPanelWidth, height: emptyPanelHeight)
         }
-        let perRow = cardsPerRow(itemCount: itemCount, screenWidth: screenWidth)
-        let columns = min(itemCount, perRow)
-        let rows = Int(ceil(Double(itemCount) / Double(perRow)))
-        let width = max(emptyPanelWidth,
-                        panelPadding * 2 + CGFloat(columns) * cardSize.width + CGFloat(columns - 1) * itemSpacing)
-        let content = CGFloat(rows) * cardSize.height + CGFloat(rows - 1) * itemSpacing
-        return CGSize(width: width,
-                      height: headerHeight + contentTopGap + content + panelPadding)
+        let maxWidth = screenWidth - screenSideMargin * 2
+        let width = min(contentWidth(itemCount: itemCount), maxWidth)
+        let height = headerHeight + contentTopGap + cardSize.height + panelPadding
+        return CGSize(width: width, height: height)
     }
 
 

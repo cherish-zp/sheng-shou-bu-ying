@@ -26,12 +26,14 @@ final class TransferShelfShelfView: NSView {
     var hoveredItemID: UUID?
 
     private var items: [TransferItem] = []
-    /// 当前屏幕可见宽度（控制器在布局前同步；决定一行卡片数与换行）。
+    /// 当前屏幕可见宽度（控制器在布局前同步；决定面板宽度与滚动范围）。
     var currentScreenWidth: CGFloat = NSScreen.main?.frame.width ?? 1512
     private let titleLabel = NSTextField(labelWithString: "中转站")
     private let countLabel = NSTextField(labelWithString: "")
     private let clearButton = NSButton()
-    private let stackView = NSStackView()
+    /// 单行横向卡片流（溢出横向滚动，滚轮纵转横——与剪贴板面板同一共享滚动视图）。
+    private let cardStack = NSStackView()
+    private let cardScroll = HorizontalScrollScrollView()
     private let emptyIcon = NSImageView()
     private let emptyLabel = NSTextField(labelWithString: "拖文件到这里暂存")
     private let emptyHintLabel = NSTextField(labelWithString: "也可拖入选中文字 / 图片 / 链接")
@@ -78,13 +80,27 @@ final class TransferShelfShelfView: NSView {
         clearButton.translatesAutoresizingMaskIntoConstraints = false
         addSubview(clearButton)
 
-        // 卡片横向流：竖向 stack 装「行」，每行是横向 stack 装卡片。
-        // 不用滚动——面板尺寸随行数拉长（TransferShelfLayoutSpec.panelSize），溢出靠换行。
-        stackView.orientation = .vertical
-        stackView.spacing = TransferShelfLayoutSpec.itemSpacing
-        stackView.alignment = .centerX
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stackView)
+        // 单行横向卡片流：横向 NSScrollView + NSStackView，溢出横向滚动
+        // （滚轮纵转横，共享 HorizontalScrollScrollView）——面板高度恒定不变高。
+        cardStack.orientation = .horizontal
+        cardStack.spacing = TransferShelfLayoutSpec.itemSpacing
+        cardStack.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+        cardStack.translatesAutoresizingMaskIntoConstraints = false
+        cardScroll.documentView = cardStack
+        cardScroll.hasHorizontalScroller = true
+        cardScroll.autohidesScrollers = true
+        cardScroll.drawsBackground = false
+        cardScroll.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(cardScroll)
+
+        // 文档 0 常量钉 clip view（滚动约束由 NSClipView 管理，手动非零会冲突被打破）；
+        // 高度钉满可视区（单行卡垂直居中由 alignment 承担）。
+        NSLayoutConstraint.activate([
+            cardStack.topAnchor.constraint(equalTo: cardScroll.contentView.topAnchor),
+            cardStack.leadingAnchor.constraint(equalTo: cardScroll.contentView.leadingAnchor),
+            cardStack.bottomAnchor.constraint(equalTo: cardScroll.contentView.bottomAnchor),
+            cardStack.widthAnchor.constraint(greaterThanOrEqualTo: cardScroll.contentView.widthAnchor),
+        ])
 
         // 空态：图标 + 主文案 + 辅助文案，整体居中（无手调偏移）
         let emptySymbol = NSImage(systemSymbolName: "tray.and.arrow.down",
@@ -126,12 +142,11 @@ final class TransferShelfShelfView: NSView {
             clearButton.widthAnchor.constraint(equalToConstant: 16),
             clearButton.heightAnchor.constraint(equalToConstant: 16),
 
-            stackView.topAnchor.constraint(equalTo: topAnchor,
-                                           constant: TransferShelfLayoutSpec.headerHeight + TransferShelfLayoutSpec.contentTopGap),
-            stackView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -TransferShelfLayoutSpec.panelPadding),
-            stackView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            stackView.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: TransferShelfLayoutSpec.panelPadding),
-            stackView.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -TransferShelfLayoutSpec.panelPadding),
+            cardScroll.topAnchor.constraint(equalTo: topAnchor,
+                                            constant: TransferShelfLayoutSpec.headerHeight + TransferShelfLayoutSpec.contentTopGap),
+            cardScroll.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -TransferShelfLayoutSpec.panelPadding),
+            cardScroll.leadingAnchor.constraint(equalTo: leadingAnchor),
+            cardScroll.trailingAnchor.constraint(equalTo: trailingAnchor),
 
             emptyStack.centerXAnchor.constraint(equalTo: centerXAnchor),
             emptyStack.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -9),
@@ -162,20 +177,9 @@ final class TransferShelfShelfView: NSView {
 
     func render(items: [TransferItem]) {
         self.items = items
-        stackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
-
-        let perRow = TransferShelfLayoutSpec.cardsPerRow(itemCount: items.count,
-                                                         screenWidth: currentScreenWidth)
-        var index = 0
-        while index < items.count {
-            let rowEnd = min(index + perRow, items.count)
-            let rowItems = items[index..<rowEnd]
-            index = rowEnd
-            let row = NSStackView(views: rowItems.map { makeItemView(for: $0) })
-            row.orientation = .horizontal
-            row.spacing = TransferShelfLayoutSpec.itemSpacing
-            row.alignment = .centerY
-            stackView.addArrangedSubview(row)
+        cardStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for item in items {
+            cardStack.addArrangedSubview(makeItemView(for: item))
         }
         let isEmpty = items.isEmpty
         emptyIcon.isHidden = !isEmpty
@@ -183,6 +187,10 @@ final class TransferShelfShelfView: NSView {
         emptyHintLabel.isHidden = !isEmpty
         clearButton.isHidden = isEmpty
         countLabel.stringValue = isEmpty ? "" : "· \(items.count) 项"
+        // 新条目出现在右端：滚动到最右露出最新内容
+        cardScroll.contentView.scroll(to: NSPoint(x: max(0, cardStack.frame.width - cardScroll.contentView.bounds.width),
+                                                  y: 0))
+        cardScroll.reflectScrolledClipView(cardScroll.contentView)
     }
 
     /// 组装卡片视图并接上交互回调（render 的每卡片装配）。
