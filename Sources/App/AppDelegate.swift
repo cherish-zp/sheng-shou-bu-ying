@@ -430,22 +430,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let header = menu.addItem(withTitle: AppBrand.displayName, action: nil, keyEquivalent: "")
         header.isEnabled = false
 
-        // App 模块
-        menu.addItem(.separator())
-        let modulesHeader = menu.addItem(withTitle: "功能模块", action: nil, keyEquivalent: "")
-        modulesHeader.isEnabled = false
-        for module in moduleRegistry.modules {
-            // 快捷键标注与设置页同源：⌥A 等（旧 functionKeyLabel 对 ⌥ 体系返回 nil 导致后缀消失）
-            let hotkeySuffix = HotkeyPreferences.load().displayLabel(for: module.id).map { " (\($0))" } ?? ""
-            let item = NSMenuItem(title: module.title + hotkeySuffix, action: #selector(performModule(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = module.id
-            item.isEnabled = moduleRegistry.isEnabled(module.id)
-            item.state = .off
-            menu.addItem(item)
-        }
+        // 功能模块段已移除（用户定案）：全部功能入口在 F1 快捷键面板（键盘布局可视化），
+        // 菜单栏不再重复罗列；模块启停在设置 → 通用。
 
-        // 重复上次截图区域（对新鲜屏幕帧重截并复制，无覆盖层）
+        // 重复上次截图区域（对新鲜屏幕帧重截并复制，无覆盖层）——F1 面板没有此功能
         menu.addItem(.separator())
         let repeatItem = NSMenuItem(title: "重复上次截图区域", action: #selector(repeatLastRegion), keyEquivalent: "")
         repeatItem.target = self
@@ -470,26 +458,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         menu.addItem(withTitle: "管理片段...", action: #selector(showSnippetSettings), keyEquivalent: "")
 
-        menu.addItem(.separator())
-        let portItem = NSMenuItem(title: "端口占用…", action: #selector(openPortMonitor), keyEquivalent: "")
-        portItem.target = self
-        portItem.isEnabled = moduleRegistry.isEnabled("portMonitor")
-        menu.addItem(portItem)
-
-        // 工具
+        // 工具：只留 F1 面板没有绑定的功能（剪贴板/速记/日历/翻译/听写/启动器/
+        // GIF/文本工具 8 项已绑定 ⌥ 组合键，菜单不再重复；端口占用…同理去除）
         menu.addItem(.separator())
         let toolsHeader = menu.addItem(withTitle: "工具", action: nil, keyEquivalent: "")
         toolsHeader.isEnabled = false
-        for (title, action) in [("剪贴板历史", #selector(showClipboardHistory)),
-                                ("速记", #selector(showScratchPad)),
-                                ("日历", #selector(showCalendar)),
-                                ("翻译…", #selector(showTranslatePanel)),
-                                ("语音听写…", #selector(showDictation)),
-                                ("启动器…", #selector(showLauncher)),
-                                ("批量改图…", #selector(showImageConvert)),
-                                ("文本工具…", #selector(showTextToolkit)),
+        for (title, action) in [("批量改图…", #selector(showImageConvert)),
                                 ("识别二维码", #selector(recognizeQRCode)),
-                                ("录 GIF（主屏）", #selector(toggleGIF)),
                                 ("锁屏", #selector(lockScreen)),
                                 ("回桌", #selector(revealDesktop))] {
             let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
@@ -530,12 +505,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         timer.tolerance = 0.25
         RunLoop.main.add(timer, forMode: .common)
         pollTimer = timer
-    }
-
-    @objc private func performModule(_ sender: NSMenuItem) {
-        guard let id = sender.representedObject as? String else { return }
-        guard moduleRegistry.isEnabled(id) else { return }
-        moduleRegistry.module(for: id)?.perform()
     }
 
     private func handleModuleStateChanged(id: String, isEnabled: Bool) {
