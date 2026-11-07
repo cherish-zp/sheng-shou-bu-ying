@@ -99,7 +99,7 @@ final class HotkeySettingsLogicTests: XCTestCase {
         guard let table = findTableView(in: window.contentView!) else {
             return XCTFail("设置窗口内应有分类列表")
         }
-        XCTAssertEqual(table.numberOfRows, 5, "侧栏应有五个分类")
+        XCTAssertEqual(table.numberOfRows, 4, "侧栏应有四个分类（片段管理已迁出为独立面板）")
         let general = table.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView
         let hotkey = table.view(atColumn: 0, row: 1, makeIfNecessary: true) as? NSTableCellView
         XCTAssertEqual(general?.textField?.stringValue, "通用")
@@ -118,7 +118,7 @@ final class HotkeySettingsLogicTests: XCTestCase {
         guard let split = window.contentView?.subviews.compactMap({ $0 as? NSSplitView }).first else {
             return XCTFail("设置窗口内应有 NSSplitView")
         }
-        XCTAssertEqual(split.arrangedSubviews.count, 6, "分类栏 + 五个分类面板")
+        XCTAssertEqual(split.arrangedSubviews.count, 5, "分类栏 + 四个分类面板")
         let panes = Array(split.arrangedSubviews.dropFirst())
         XCTAssertFalse(panes[1].isHidden, "选中「快捷键」时其面板应可见")
         XCTAssertTrue(panes[1] is HotkeySettingsPaneView, "index 1 应为快捷键面板")

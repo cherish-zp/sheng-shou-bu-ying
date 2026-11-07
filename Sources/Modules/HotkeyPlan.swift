@@ -131,7 +131,7 @@ public struct HotkeyPreferences: Codable, Equatable {
         ("translate", "翻译", 17),
         ("gifRecorder", "录 GIF", 5),
         ("launcher", "启动器", 37),
-        ("calendar", "日历", 40),
+        ("snippets", "快速片段", 40),
         ("textToolkit", "文本工具", 32),
     ]
 

@@ -9,12 +9,11 @@ final class SettingsWindow: NSWindow, NSWindowDelegate, NSTableViewDataSource, N
     private var pinPane: PinSettingsPaneView!
     private var generalPane: GeneralSettingsPaneView!
     private var hotkeyPane: HotkeySettingsPaneView!
-    private var snippetPane: SnippetManagerView!
     private var recordingPane: RecordingSettingsPaneView!
     private let moduleRegistry: AppModuleRegistry
     private let onModuleStateChanged: (String, Bool) -> Void
 
-    private let sidebarItems = ["通用", "快捷键", "快速片段", "贴图", "录屏"]
+    private let sidebarItems = ["通用", "快捷键", "贴图", "录屏"]
     private static let cellID = NSUserInterfaceItemIdentifier("settingsSidebarCell")
 
     init(moduleRegistry: AppModuleRegistry, onModuleStateChanged: @escaping (String, Bool) -> Void) {
@@ -91,14 +90,12 @@ final class SettingsWindow: NSWindow, NSWindowDelegate, NSTableViewDataSource, N
         generalPane = GeneralSettingsPaneView(moduleRegistry: moduleRegistry)
         generalPane.onModuleStateChanged = onModuleStateChanged
         hotkeyPane = HotkeySettingsPaneView()
-        snippetPane = SnippetManagerView()
         pinPane = PinSettingsPaneView()
         recordingPane = RecordingSettingsPaneView()
 
         split.addArrangedSubview(sidebar)
         split.addArrangedSubview(generalPane)
         split.addArrangedSubview(hotkeyPane)
-        split.addArrangedSubview(snippetPane)
         split.addArrangedSubview(pinPane)
         split.addArrangedSubview(recordingPane)
         split.setHoldingPriority(NSLayoutConstraint.Priority(260), forSubviewAt: 0)
@@ -138,9 +135,8 @@ final class SettingsWindow: NSWindow, NSWindowDelegate, NSTableViewDataSource, N
     private func applySelectedCategory(_ index: Int) {
         generalPane?.isHidden = index != 0
         hotkeyPane?.isHidden = index != 1
-        snippetPane?.isHidden = index != 2
-        pinPane?.isHidden = index != 3
-        recordingPane?.isHidden = index != 4
+        pinPane?.isHidden = index != 2
+        recordingPane?.isHidden = index != 3
     }
 
     // MARK: - NSTableView

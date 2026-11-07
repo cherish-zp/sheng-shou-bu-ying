@@ -14,9 +14,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var textToolkitWindowController: TextToolkitWindowController?
     private let qrReaderService = QRReaderService()
     private let clipboardHistoryModule = ClipboardHistoryModule()
+    private let snippetPanelModule = SnippetPanelModule()
     private lazy var hotkeyPanelModule = HotkeyPanelModule()
     private let scratchPadModule = ScratchPadModule()
-    private var calendarWindowController: CalendarWindowController?
     private var translatePanelController: TranslatePanelController?
     private var dictationWindowController: DictationWindowController?
     private var launcherPanelController: LauncherPanelController?
@@ -164,6 +164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case "open-dictation": self?.showDictation()
             case "open-launcher": self?.showLauncher()
             case "open-shelf": self?.transferShelfModule.perform()
+            case "open-snippets": self?.showSnippetPanel()
             default: break
             }
         }
@@ -223,13 +224,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// GIF 录制开停（主屏）。
     @objc private func toggleGIF() {
         gifRecorder.isRunning ? gifRecorder.stop() : gifRecorder.start()
-    }
-
-    /// 轻量日历窗口。
-    @objc private func showCalendar() {
-        let controller = calendarWindowController ?? CalendarWindowController()
-        calendarWindowController = controller
-        controller.showPanel()
     }
 
     /// 批量改图：选择图片 → 格式/尺寸选项 → 转换输出到所选文件夹。
@@ -359,7 +353,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "translate": guarded("translate") { [weak self] in self?.showTranslatePanel() },
             "gifRecorder": guarded("gifRecorder") { [weak self] in self?.toggleGIF() },
             "launcher": guarded("launcher") { [weak self] in self?.showLauncher() },
-            "calendar": guarded("calendar") { [weak self] in self?.showCalendar() },
+            "snippets": guarded("snippets") { [weak self] in self?.showSnippetPanel() },
             "textToolkit": guarded("textToolkit") { [weak self] in self?.showTextToolkit() },
         ]
     }
@@ -431,14 +425,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         header.isEnabled = false
 
         // 功能模块段已移除（用户定案）：全部功能入口在 F1 快捷键面板（键盘布局可视化），
-        // 菜单栏不再重复罗列；模块启停在设置 → 通用。
-
-        // 重复上次截图区域（对新鲜屏幕帧重截并复制，无覆盖层）——F1 面板没有此功能
-        menu.addItem(.separator())
-        let repeatItem = NSMenuItem(title: "重复上次截图区域", action: #selector(repeatLastRegion), keyEquivalent: "")
-        repeatItem.target = self
-        repeatItem.isEnabled = moduleRegistry.isEnabled("screenshot")
-        menu.addItem(repeatItem)
+        // 菜单栏不再重复罗列；模块启停在设置 → 通用。「重复上次截图区域」同批移除。
 
         // 快速片段
         menu.addItem(.separator())
@@ -481,6 +468,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 菜单栏顶层「端口占用…」：打开占用窗口。
     @objc private func openPortMonitor() {
         portMonitorModule.perform()
+    }
+
+    /// ⌥K 快速片段面板（管理入口从设置迁出，用户定案）。
+    @objc private func showSnippetPanel() {
+        snippetPanelModule.showPanel()
     }
 
     /// 遥控/调试：弹开状态栏菜单（等效点击状态图标）。

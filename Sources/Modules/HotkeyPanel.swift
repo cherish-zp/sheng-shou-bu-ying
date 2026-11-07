@@ -144,7 +144,7 @@ public enum HotkeyPanelContent {
         "translate": "character.bubble",
         "gifRecorder": "animated",
         "launcher": "square.grid.2x2",
-        "calendar": "calendar",
+        "snippets": "text.alignleft",
         "textToolkit": "textformat",
         "hotkeyPanel": "keyboard",
     ]

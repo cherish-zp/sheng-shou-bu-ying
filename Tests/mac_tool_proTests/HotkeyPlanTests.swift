@@ -57,7 +57,7 @@ final class HotkeyPlanTests: XCTestCase {
         XCTAssertEqual(prefs.bindings["translate"]?.keyCode, 17)
         XCTAssertEqual(prefs.bindings["gifRecorder"]?.keyCode, 5)
         XCTAssertEqual(prefs.bindings["launcher"]?.keyCode, 37)
-        XCTAssertEqual(prefs.bindings["calendar"]?.keyCode, 40)
+        XCTAssertEqual(prefs.bindings["snippets"]?.keyCode, 40)
         XCTAssertEqual(prefs.bindings["textToolkit"]?.keyCode, 32)
     }
 
