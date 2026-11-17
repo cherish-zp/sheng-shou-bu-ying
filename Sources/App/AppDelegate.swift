@@ -426,24 +426,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 功能模块段已移除（用户定案）：全部功能入口在 F1 快捷键面板（键盘布局可视化），
         // 菜单栏不再重复罗列；模块启停在设置 → 通用。「重复上次截图区域」同批移除。
-
-        // 快速片段
-        menu.addItem(.separator())
-        let snippetsHeader = menu.addItem(withTitle: "快速片段", action: nil, keyEquivalent: "")
-        snippetsHeader.isEnabled = false
-        let snippetManager = SnippetManager.shared
-        if snippetManager.snippets.isEmpty {
-            let emptyItem = menu.addItem(withTitle: "（暂无片段）", action: nil, keyEquivalent: "")
-            emptyItem.isEnabled = false
-        } else {
-            for snippet in snippetManager.snippets {
-                let item = NSMenuItem(title: snippet.key, action: #selector(copySnippet(_:)), keyEquivalent: "")
-                item.target = self
-                item.toolTip = snippet.content
-                menu.addItem(item)
-            }
-        }
-        menu.addItem(withTitle: "管理片段...", action: #selector(showSnippetSettings), keyEquivalent: "")
+        // 快速片段段也已移除（用户定案）：⌥K 面板是片段的唯一管理+使用入口。
 
         // 工具：只留 F1 面板没有绑定的功能（剪贴板/速记/日历/翻译/听写/启动器/
         // GIF/文本工具 8 项已绑定 ⌥ 组合键，菜单不再重复；端口占用…同理去除）
@@ -543,15 +526,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DiagLog.write("DumpCaptureReference done exit=\(proc.terminationStatus)")
     }
 
-    // MARK: - 快速片段
-
-    @objc private func copySnippet(_ sender: NSMenuItem) {
-        let key = sender.title
-        if SnippetManager.shared.copyToPasteboard(forKey: key) {
-            DiagLog.write("Snippet copied: \(key)")
-            CopyToastPresenter.shared.show()
-        }
-    }
+    // MARK: - 设置
 
     @objc private func showSettings() {
         openSettings(category: 0)
@@ -561,10 +536,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 设置窗口的唯一入口是菜单栏「设置…（⌘,）」。
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         true
-    }
-
-    @objc private func showSnippetSettings() {
-        openSettings(category: 1)
     }
 
     private func openSettings(category: Int) {
