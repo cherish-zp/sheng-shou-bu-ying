@@ -224,6 +224,10 @@ final class SnippetPanelModule: NSObject {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(snippet.content, forType: .string)
         TransientHudToast.show(text: "已复制「\(snippet.key)」")
+        // 复制即目的达成，立刻收起面板（用户定案，契约见 SnippetPanelGate）
+        if SnippetPanelGate.copyShouldHidePanel {
+            hidePanel()
+        }
     }
 
     // MARK: - 编辑浮层（新增/修改）

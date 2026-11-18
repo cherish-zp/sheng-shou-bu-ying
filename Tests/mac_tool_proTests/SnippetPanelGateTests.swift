@@ -23,4 +23,11 @@ final class SnippetPanelGateTests: XCTestCase {
     func test_resign_withoutEditor_hidesPanel() {
         XCTAssertTrue(SnippetPanelGate.resignShouldHidePanel(hasEditor: false))
     }
+
+    /// 用户定案（2026-11-18）：点击卡片复制完成后应立刻关闭主面板——
+    /// 面板是「取片段」的工具，复制即目的达成，残留面板反而挡屏幕。
+    func test_copy_success_shouldHidePanel() {
+        XCTAssertTrue(SnippetPanelGate.copyShouldHidePanel,
+                      "复制完成后必须立刻隐藏面板（用户定案）")
+    }
 }
