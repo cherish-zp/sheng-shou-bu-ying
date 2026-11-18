@@ -128,6 +128,35 @@ final class ScreenshotCoordinator {
         NSApp.setActivationPolicy(.accessory)
         DiagLog.write("activationPolicy -> accessory (screenshot session)")
 
+        // 3. policy 生效确认后再显示 overlay：setActivationPolicy 异步生效，
+        // 窗口若在 WindowServer 接受新 policy 前 orderFront，仍按 .regular 应用
+        // 的 fullScreenAuxiliary 处理，在其他应用全屏 Space 不合成（⌥A「按了
+        // 没反应」的根因，契约见 ScreenshotSpacePlan）。
+        waitPolicyThenPresent(displays: displays, attempt: 0)
+    }
+
+    /// 轮询确认 .accessory 已生效（上限 200ms，超时照样显示——由 occlusion 自检兜底）。
+    private func waitPolicyThenPresent(
+        displays: [(displayID: CGDirectDisplayID, image: CGImage, frame: CGRect)],
+        attempt: Int
+    ) {
+        if NSApp.activationPolicy() == .accessory || attempt >= ScreenshotSpacePlan.policyWaitMaxAttempts {
+            if attempt > 0 {
+                let timedOut = attempt >= ScreenshotSpacePlan.policyWaitMaxAttempts
+                DiagLog.write("activationPolicy confirmed after \(attempt) poll(s)\(timedOut ? " (timed out, occlusion check guards)" : "")")
+            }
+            presentOverlays(displays: displays)
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + ScreenshotSpacePlan.policyWaitInterval) { [weak self] in
+            self?.waitPolicyThenPresent(displays: displays, attempt: attempt + 1)
+        }
+    }
+
+    /// 创建并显示覆盖层窗口（必须在 .accessory 生效后调用）。
+    private func presentOverlays(
+        displays: [(displayID: CGDirectDisplayID, image: CGImage, frame: CGRect)]
+    ) {
         // 时序：先全部 orderFront 之后再 activate（设 key 事件用）。
 
         // 4. 为每个屏幕创建覆盖层窗口
@@ -178,6 +207,45 @@ final class ScreenshotCoordinator {
 
        // 7. 空闲超时安全网：若覆盖层不可见（如全屏 Space 下），15 秒后自动清理
        scheduleIdleTimeout()
+
+       // 8. 可见性自检：窗口创建成功 ≠ 用户看得见（全屏 Space 合成竞态），
+       // 程序化实证并逐级自愈（契约见 ScreenshotSpacePlan.visibilityAction）
+       scheduleVisibilityCheck(attempt: 0)
+    }
+
+    /// 可见性自检与逐级自愈：重新 orderFront → moveActiveSpace 重建 → 显式取消+提示。
+    private func scheduleVisibilityCheck(attempt: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + ScreenshotSpacePlan.visibilityCheckDelay) { [weak self] in
+            guard let self, !self.overlayWindows.isEmpty, self.selectionRect == nil else { return }
+            let invisible = self.overlayWindows.filter { !$0.occlusionState.contains(.visible) }
+            guard !invisible.isEmpty else {
+                if attempt == 0 {
+                    DiagLog.write("Overlay visibility check: all visible")
+                }
+                return
+            }
+            DiagLog.write("Overlay visibility check: \(invisible.count)/\(self.overlayWindows.count) invisible (attempt=\(attempt))")
+            switch ScreenshotSpacePlan.visibilityAction(isVisible: false, attempt: attempt) {
+            case .keep:
+                break
+            case .reorderFront:
+                invisible.forEach { $0.orderFrontRegardless() }
+                self.scheduleVisibilityCheck(attempt: attempt + 1)
+            case .rebuildMoveActiveSpace:
+                for window in invisible {
+                    // canJoinAllSpaces 在全屏 Space 合成受限时，跟随当前 Space 是兜底
+                    window.orderOut(nil)
+                    window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+                    window.orderFrontRegardless()
+                }
+                DiagLog.write("Overlay visibility: rebuilt \(invisible.count) window(s) as moveActiveSpace")
+                self.scheduleVisibilityCheck(attempt: attempt + 1)
+            case .cancelWithNotice:
+                DiagLog.write("Overlay visibility: recovery failed, cancelling session")
+                TransientHudToast.show(text: ScreenshotSpacePlan.invisibleNotice)
+                self.cancel()
+            }
+        }
     }
 
     /// 启动/重置空闲超时定时器：距本次调度 15 秒内无任何鼠标活动且未完成选区时自动结束会话。
